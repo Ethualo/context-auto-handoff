@@ -2,7 +2,7 @@
 description: Save current session context to handoff file. Use when user runs /handoff-save or asks to save session state before ending.
 ---
 
-Save session context to `.claude/handoff.md` and timestamped archive to `.claude/handoffs/`.
+Save session context to `.claude/handoff.md` and timestamped archive to `.claude/handoffs/`. If `implicitRules` or `keyDecisions` are provided, `generate_handoff_manifest` also upserts a `## Session Learnings (auto-updated by handoff)` section into the project's `CLAUDE.md` (creating it if missing), replacing the prior auto-managed block (marked by `<!-- handoff:learnings:begin/end -->`) rather than appending — so CLAUDE.md always reflects the latest distilled context instead of growing unbounded.
 
 ## Content Generation Rules (STRICT)
 
@@ -39,4 +39,5 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
 2. Confirm to user using the agent's short report:
    - Latest: `.claude/handoff.md`
    - Archive: `.claude/handoffs/handoff-{timestamp}.md`
+   - CLAUDE.md: updated path, if the tool reported one
    - Next session: run `/handoff-resume` or SessionStart hook auto-restores

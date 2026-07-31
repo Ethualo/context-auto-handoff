@@ -24,6 +24,8 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 
 초안 작성(1회 저장당 3-6k 토큰 규모)은 Haiku 서브에이전트가 맡아 `generate_handoff_manifest` 호출까지 직접 수행합니다 — 초안이 메인 세션 모델 컨텍스트를 거치지 않습니다.
 
+핸드오프 작성 시 주요 내용(`implicitRules`, `keyDecisions`)은 `CLAUDE.md`에도 함께 갱신되어, 재개(resume) 없이도 매 세션 자동으로 로드됩니다.
+
 ---
 
 ## 구성 요소

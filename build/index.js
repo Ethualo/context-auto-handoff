@@ -57,10 +57,11 @@ server.tool('generate_handoff_manifest', {
             relativePath: path.relative(handoffsDir, archivePath).replace(/\\/g, '/')
         });
         pruneHandoffs(handoffsDir, 50);
+        const claudeMdPath = upsertClaudeMdSection(projectRoot, implicitRules ?? [], keyDecisions ?? []);
         return {
             content: [{
                     type: 'text',
-                    text: `Handoff saved.\nLatest: ${mainPath}\nArchive: ${archivePath}`
+                    text: `Handoff saved.\nLatest: ${mainPath}\nArchive: ${archivePath}${claudeMdPath ? `\nCLAUDE.md updated: ${claudeMdPath}` : ''}`
                 }]
         };
     }
@@ -163,6 +164,31 @@ function buildMarkdown(params) {
     }
     sections.push(`---\n*A short hint surfaces on session start; full context loads only if your next prompt matches a keyword above, or via manual \`/handoff-resume\`.*`);
     return sections.join('\n');
+}
+const CLAUDE_MD_BEGIN = '<!-- handoff:learnings:begin -->';
+const CLAUDE_MD_END = '<!-- handoff:learnings:end -->';
+// Replaces (not appends) the auto-managed section on every save, so CLAUDE.md
+// reflects the latest distilled context instead of growing unbounded across sessions.
+function upsertClaudeMdSection(projectRoot, implicitRules, keyDecisions) {
+    if (implicitRules.length === 0 && keyDecisions.length === 0)
+        return null;
+    const claudeMdPath = path.join(projectRoot, 'CLAUDE.md');
+    const parts = [`${CLAUDE_MD_BEGIN}`, `## Session Learnings (auto-updated by handoff)`, ``];
+    if (implicitRules.length > 0) {
+        parts.push(`### Implicit Rules`, ...implicitRules.map(r => `- ${r}`), ``);
+    }
+    if (keyDecisions.length > 0) {
+        parts.push(`### Key Decisions`, ...keyDecisions.map(d => `- ${d}`), ``);
+    }
+    parts.push(CLAUDE_MD_END);
+    const section = parts.join('\n');
+    const existing = fs.existsSync(claudeMdPath) ? fs.readFileSync(claudeMdPath, 'utf-8') : `# CLAUDE.md\n`;
+    const blockRegex = new RegExp(`${CLAUDE_MD_BEGIN}[\\s\\S]*?${CLAUDE_MD_END}`);
+    const updated = blockRegex.test(existing)
+        ? existing.replace(blockRegex, section)
+        : `${existing.trimEnd()}\n\n${section}\n`;
+    fs.writeFileSync(claudeMdPath, updated, 'utf-8');
+    return claudeMdPath;
 }
 async function main() {
     const transport = new StdioServerTransport();
