@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "claude-context-handoff",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "displayName": "Context Auto-Handoff",
       "description": "Automatically saves session context and generates handoff manifests before Claude compacts or stops.",
       "source": {
