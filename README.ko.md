@@ -4,7 +4,7 @@
 
 컨텍스트 압축이나 세션 종료 직전, 다음 세션이 현재 맥락을 그대로 이어받도록 토큰 효율적인 핸드오프 문서를 자동으로 써 두는 Claude Code 플러그인.
 
-![npm version](https://img.shields.io/npm/v/claude-context-auto-handoff)
+![npm version](https://img.shields.io/npm/v/context-auto-handoff)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 ---
@@ -72,23 +72,23 @@ Claude Code 훅은 기본 내장. Codex 훅은 `templates/.codex`를 프로젝�
 
 **Linux / macOS**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.sh | bash
 # Codex도 함께 설정 (훅 + handoff-drafter 서브에이전트 + AGENTS.md):
-curl -fsSL https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.sh | bash -s -- --codex
+curl -fsSL https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.sh | bash -s -- --codex
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.ps1 -OutFile setup.ps1
+irm https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.ps1 -OutFile setup.ps1
 .\setup.ps1          # Claude Code만
 .\setup.ps1 -Codex   # Codex도 함께 설정 (훅 + handoff-drafter 서브에이전트 + AGENTS.md)
 ```
 
 **npm (크로스플랫폼)**
 ```bash
-npm install -g claude-context-auto-handoff
-claude-context-handoff-setup           # Claude Code만
-claude-context-handoff-setup --codex   # Codex도 함께 설정
+npm install -g context-auto-handoff
+context-handoff-setup           # Claude Code만
+context-handoff-setup --codex   # Codex도 함께 설정
 ```
 
 ---
@@ -98,14 +98,14 @@ claude-context-handoff-setup --codex   # Codex도 함께 설정
 ### Claude Code 플러그인으로 설치
 
 ```bash
-claude plugin install claude-context-auto-handoff
+claude plugin install context-handoff
 ```
 
 ### npm 패키지로 설치
 
 ```bash
-npm install -g claude-context-auto-handoff
-claude-context-handoff-setup  # hooks.json 자동 배치, --codex 붙이면 Codex도 함께 설정
+npm install -g context-auto-handoff
+context-handoff-setup  # hooks.json 자동 배치, --codex 붙이면 Codex도 함께 설정
 ```
 
 ### MCP 수동 설정 (Claude Code)
@@ -136,8 +136,8 @@ args = ["/path/to/build/index.js"]
 그런 다음 훅 템플릿과 지시문을 프로젝트 루트에 복사:
 
 ```bash
-cp -r /path/to/claude-context-auto-handoff/templates/.codex ./.codex
-cp /path/to/claude-context-auto-handoff/templates/AGENTS.md ./AGENTS.md
+cp -r /path/to/context-auto-handoff/templates/.codex ./.codex
+cp /path/to/context-auto-handoff/templates/AGENTS.md ./AGENTS.md
 ```
 
 Claude Code와 동일한 `SessionStart`, `PreCompact`, `Stop` 훅이 켜지고 핸드오프 초안 작성+저장을 메인 스레드 밖에서 처리하는 `handoff-drafter` 서브에이전트(`.codex/agents/handoff-drafter.toml`)도 함께 활성화됩니다.

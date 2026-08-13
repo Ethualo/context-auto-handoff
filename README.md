@@ -4,7 +4,7 @@ English | **[한국어](README.ko.md)**
 
 Claude Code plugin that automatically saves session context and generates token-efficient handoff manifests before Claude compacts or stops.
 
-![npm version](https://img.shields.io/npm/v/claude-context-auto-handoff)
+![npm version](https://img.shields.io/npm/v/context-auto-handoff)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 ---
@@ -72,23 +72,23 @@ Claude Code hooks are built-in. Codex hooks require copying `templates/.codex` t
 
 **Linux / macOS**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.sh | bash
 # Also set up Codex (hooks + handoff-drafter subagent + AGENTS.md):
-curl -fsSL https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.sh | bash -s -- --codex
+curl -fsSL https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.sh | bash -s -- --codex
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.ps1 -OutFile setup.ps1
+irm https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.ps1 -OutFile setup.ps1
 .\setup.ps1          # Claude Code only
 .\setup.ps1 -Codex   # also set up Codex (hooks + handoff-drafter subagent + AGENTS.md)
 ```
 
 **npm (cross-platform)**
 ```bash
-npm install -g claude-context-auto-handoff
-claude-context-handoff-setup           # Claude Code only
-claude-context-handoff-setup --codex   # also set up Codex
+npm install -g context-auto-handoff
+context-handoff-setup           # Claude Code only
+context-handoff-setup --codex   # also set up Codex
 ```
 
 ---
@@ -98,14 +98,14 @@ claude-context-handoff-setup --codex   # also set up Codex
 ### As a Claude Code plugin
 
 ```bash
-claude plugin install claude-context-auto-handoff
+claude plugin install context-handoff
 ```
 
 ### As an npm package
 
 ```bash
-npm install -g claude-context-auto-handoff
-claude-context-handoff-setup  # hooks.json 자동 배치, --codex 붙이면 Codex도 함께 설정
+npm install -g context-auto-handoff
+context-handoff-setup  # hooks.json 자동 배치, --codex 붙이면 Codex도 함께 설정
 ```
 
 ### Manual MCP configuration (Claude Code)
@@ -136,8 +136,8 @@ args = ["/path/to/build/index.js"]
 Then copy the hook templates and instructions to your project root:
 
 ```bash
-cp -r /path/to/claude-context-auto-handoff/templates/.codex ./.codex
-cp /path/to/claude-context-auto-handoff/templates/AGENTS.md ./AGENTS.md
+cp -r /path/to/context-auto-handoff/templates/.codex ./.codex
+cp /path/to/context-auto-handoff/templates/AGENTS.md ./AGENTS.md
 ```
 
 This enables the same `SessionStart`, `PreCompact`, and `Stop` hooks as Claude Code, plus a `handoff-drafter` subagent (`.codex/agents/handoff-drafter.toml`) that drafts and saves the handoff so it doesn't run in your main thread.

@@ -1,12 +1,12 @@
 {
-  "name": "claude-context-auto-handoff",
+  "name": "context-auto-handoff",
   "version": "1.2.0",
   "description": "A Claude Code plugin to automate session handoffs before context compaction.",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "claude-context-handoff": "build/index.js",
-    "claude-context-handoff-setup": "scripts/setup.js"
+    "context-handoff": "build/index.js",
+    "context-handoff-setup": "scripts/setup.js"
   },
   "files": [
     "build",

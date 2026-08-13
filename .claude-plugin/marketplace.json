@@ -7,16 +7,16 @@
   },
   "plugins": [
     {
-      "name": "claude-context-handoff",
+      "name": "context-handoff",
       "version": "1.2.0",
       "displayName": "Context Auto-Handoff",
       "description": "Automatically saves session context and generates handoff manifests before Claude compacts or stops.",
       "source": {
         "source": "npm",
-        "package": "claude-context-auto-handoff"
+        "package": "context-auto-handoff"
       },
-      "homepage": "https://github.com/Ethualo/claude-context-auto-handoff",
-      "repository": "https://github.com/Ethualo/claude-context-auto-handoff",
+      "homepage": "https://github.com/Ethualo/context-auto-handoff",
+      "repository": "https://github.com/Ethualo/context-auto-handoff",
       "license": "MIT",
       "author": {
         "name": "Ethualo",

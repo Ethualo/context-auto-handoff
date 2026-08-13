@@ -1,13 +1,13 @@
 {
-  "name": "claude-context-handoff",
+  "name": "context-handoff",
   "version": "1.2.0",
   "description": "Automatically saves session context and generates handoff manifests before Claude compacts or stops.",
   "author": {
     "name": "Ethualo",
     "email": "lkh0926ym@naver.com"
   },
-  "homepage": "https://github.com/Ethualo/claude-context-auto-handoff",
-  "repository": "https://github.com/Ethualo/claude-context-auto-handoff",
+  "homepage": "https://github.com/Ethualo/context-auto-handoff",
+  "repository": "https://github.com/Ethualo/context-auto-handoff",
   "license": "MIT",
   "keywords": ["context", "handoff", "session", "memory", "compaction", "claude-code"],
   "category": "productivity",

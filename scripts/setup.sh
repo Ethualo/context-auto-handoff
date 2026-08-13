@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# claude-context-auto-handoff -- one-line setup for Linux/macOS
-# Usage: curl -fsSL https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.sh | bash
+# context-auto-handoff -- one-line setup for Linux/macOS
+# Usage: curl -fsSL https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.sh | bash
 # Codex support:  ... | bash -s -- --codex
 
 set -e
 
-PLUGIN_NAME="claude-context-handoff"
+PLUGIN_NAME="context-handoff"
 HOOKS_TARGET="$HOME/.claude/hooks.json"
 WITH_CODEX=false
 
@@ -18,9 +18,9 @@ done
 echo "[Handoff Setup] Installing $PLUGIN_NAME..."
 
 # 1. npm global install (builds TypeScript)
-npm install -g claude-context-auto-handoff
+npm install -g context-auto-handoff
 
-PKG_ROOT="$(npm root -g)/claude-context-auto-handoff"
+PKG_ROOT="$(npm root -g)/context-auto-handoff"
 
 # 2. Register hooks.json (warn if already exists)
 HOOKS_SRC="$PKG_ROOT/hooks/hooks.json"

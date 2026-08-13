@@ -1,5 +1,5 @@
-# claude-context-auto-handoff -- one-line setup for Windows (PowerShell)
-# Usage: irm https://raw.githubusercontent.com/Ethualo/claude-context-auto-handoff/main/scripts/setup.ps1 | iex
+# context-auto-handoff -- one-line setup for Windows (PowerShell)
+# Usage: irm https://raw.githubusercontent.com/Ethualo/context-auto-handoff/main/scripts/setup.ps1 | iex
 # Codex support: run the downloaded file with -Codex, e.g. .\setup.ps1 -Codex
 
 param(
@@ -8,16 +8,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$PluginName = "claude-context-handoff"
+$PluginName = "context-handoff"
 $HooksTarget = "$env:USERPROFILE\.claude\hooks.json"
 
 Write-Host "[Handoff Setup] Installing $PluginName..."
 
 # 1. npm global install (builds TypeScript)
-npm install -g claude-context-auto-handoff
+npm install -g context-auto-handoff
 
 $NpmRoot = (npm root -g).Trim()
-$PkgRoot = Join-Path $NpmRoot "claude-context-auto-handoff"
+$PkgRoot = Join-Path $NpmRoot "context-auto-handoff"
 
 # 2. Register hooks.json (warn if already exists)
 $HooksSrc = Join-Path $PkgRoot "hooks\hooks.json"
