@@ -4,7 +4,7 @@ Copy this file to your project root as `AGENTS.md` when using the `context-hando
 
 ## Session Start
 
-If `.claude/handoff.md` exists in the project root, read it immediately before doing anything else. Restore all context: task description, current status, key decisions, failed approaches, blockers, and next steps. Begin from the first uncompleted next step.
+If `.handoff/handoff.md` exists in the project root, read it immediately before doing anything else. Restore all context: task description, current status, key decisions, failed approaches, blockers, and next steps. Begin from the first uncompleted next step.
 
 If the file does not exist, proceed normally.
 
@@ -27,7 +27,7 @@ If the `handoff-drafter` subagent is unavailable, fall back to calling `generate
 | `blockers` | optional | Unresolved errors or open questions |
 | `workingDirectory` | recommended | Absolute path to this project's root. Pass it explicitly — do not rely on the tool's cwd fallback. |
 
-Output is saved to `.claude/handoff.md` (latest) and `.claude/handoffs/handoff-{timestamp}.md` (archive).
+Output is saved to `.handoff/handoff.md` (latest) and `.handoff/handoffs/handoff-{timestamp}.md` (archive).
 
 ## Rules
 

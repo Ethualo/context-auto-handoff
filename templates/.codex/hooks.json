@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const fs=require('fs'),path=require('path');const f=path.join(process.cwd(),'.claude','handoff.md');if(fs.existsSync(f)){console.log('CONTEXT HANDOFF FOUND — restore this context before doing anything else:');console.log('---');console.log(fs.readFileSync(f,'utf8'));console.log('---');console.log('Begin from first uncompleted Next Step. Never retry Failed Approaches.')}\"",
+            "command": "node -e \"const fs=require('fs'),path=require('path');const f=path.join(process.cwd(),'.handoff','handoff.md');if(fs.existsSync(f)){console.log('CONTEXT HANDOFF FOUND — restore this context before doing anything else:');console.log('---');console.log(fs.readFileSync(f,'utf8'));console.log('---');console.log('Begin from first uncompleted Next Step. Never retry Failed Approaches.')}\"",
             "timeout": 5,
             "statusMessage": "Restoring session context"
           }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const fs=require('fs'),path=require('path');const f=path.join(process.cwd(),'.claude','handoff.md');if(!fs.existsSync(f)){console.log('No handoff file found. If this session had meaningful work, delegate to the handoff-drafter subagent per AGENTS.md before ending.')}else{const age=(Date.now()-fs.statSync(f).mtimeMs)/1000;if(age>300){console.log('HANDOFF STALE (last saved '+Math.round(age/60)+' min ago). Delegate to the handoff-drafter subagent per AGENTS.md to update session context.')}}\"",
+            "command": "node -e \"const fs=require('fs'),path=require('path');const f=path.join(process.cwd(),'.handoff','handoff.md');if(!fs.existsSync(f)){console.log('No handoff file found. If this session had meaningful work, delegate to the handoff-drafter subagent per AGENTS.md before ending.')}else{const age=(Date.now()-fs.statSync(f).mtimeMs)/1000;if(age>300){console.log('HANDOFF STALE (last saved '+Math.round(age/60)+' min ago). Delegate to the handoff-drafter subagent per AGENTS.md to update session context.')}}\"",
             "timeout": 5,
             "statusMessage": "Checking handoff status"
           }

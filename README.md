@@ -32,7 +32,7 @@ Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md
 
 ### Tools
 
-- **`generate_handoff_manifest`** — Writes a structured `.claude/handoff.md` to the current project directory. Also archives to `.claude/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (auto-pruned to the most recent 50 archive files) and upserts a one-line entry in `.claude/handoffs/index.md` — a compact, grep-friendly index (date, keywords, headline, path) for searching past handoffs without opening every archive file. Repeat saves within the same session (e.g. both `PreCompact` and `Stop` firing in one long session) update that session's own archive file and index line in place instead of piling up near-duplicates — each MCP server process gets one session id, tagged in the `session:` frontmatter field.
+- **`generate_handoff_manifest`** — Writes a structured `.handoff/handoff.md` to the current project directory. Also archives to `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (auto-pruned to the most recent 50 archive files) and upserts a one-line entry in `.handoff/handoffs/index.md` — a compact, grep-friendly index (date, keywords, headline, path) for searching past handoffs without opening every archive file. Repeat saves within the same session (e.g. both `PreCompact` and `Stop` firing in one long session) update that session's own archive file and index line in place instead of piling up near-duplicates — each MCP server process gets one session id, tagged in the `session:` frontmatter field.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -52,8 +52,8 @@ Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md
 | Command | Behavior |
 |---------|----------|
 | `/handoff-save` | Delegate to a Haiku subagent that drafts session context and calls `generate_handoff_manifest` itself — keeps the 3-6k token draft off the (usually pricier) main-session model |
-| `/handoff-resume` | Read `.claude/handoff.md` and restore context in a new session |
-| `/handoff-search` | Grep `.claude/handoffs/index.md` for a topic and surface matching past sessions — no database, no embeddings |
+| `/handoff-resume` | Read `.handoff/handoff.md` and restore context in a new session |
+| `/handoff-search` | Grep `.handoff/handoffs/index.md` for a topic and surface matching past sessions — no database, no embeddings |
 
 ### Hooks
 
@@ -148,7 +148,7 @@ This enables the same `SessionStart`, `PreCompact`, and `Stop` hooks as Claude C
 
 ### Claude Code
 
-All four hooks fire automatically — `SessionStart` surfaces a short hint if a handoff exists, `UserPromptSubmit` auto-loads full context when your prompt matches a saved keyword, `PreCompact` saves before compression, `Stop` warns if handoff is stale. Generated manifests are saved to `.claude/handoff.md`.
+All four hooks fire automatically — `SessionStart` surfaces a short hint if a handoff exists, `UserPromptSubmit` auto-loads full context when your prompt matches a saved keyword, `PreCompact` saves before compression, `Stop` warns if handoff is stale. Generated manifests are saved to `.handoff/handoff.md`.
 
 **Manual checkpoint:**
 ```
@@ -171,7 +171,7 @@ Same three hooks fire automatically via `.codex/hooks.json`. No slash commands �
 
 | Event | Behavior |
 |-------|----------|
-| `SessionStart` | Reads `.claude/handoff.md` and injects content as context |
+| `SessionStart` | Reads `.handoff/handoff.md` and injects content as context |
 | `PreCompact` | Prompts Codex to delegate to the `handoff-drafter` subagent before compression |
 | `Stop` | Warns if handoff is stale (>5 min) or missing |
 

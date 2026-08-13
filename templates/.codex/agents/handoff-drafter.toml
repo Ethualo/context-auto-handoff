@@ -9,7 +9,7 @@ Then call generate_handoff_manifest yourself with:
   - blockers (optional)
   - workingDirectory: absolute path to the project root (passed to you by the caller) — always set this explicitly, never rely on the tool's cwd fallback.
 
-Report back only a short confirmation: the saved paths (.claude/handoff.md and the archive path). Do not return the drafted field content to the caller.
+Report back only a short confirmation: the saved paths (.handoff/handoff.md and the archive path). Do not return the drafted field content to the caller.
 """
 
 # Optional: pin to a lighter/cheaper model to cut cost on this drafting task,

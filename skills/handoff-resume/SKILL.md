@@ -2,12 +2,12 @@
 description: Restore previous session context from handoff file. Use when user runs /handoff-resume or asks to continue from last session.
 ---
 
-Reads `.claude/handoff.md`. Falls back to latest file in `.claude/handoffs/`.
+Reads `.handoff/handoff.md`. Falls back to latest file in `.handoff/handoffs/`.
 
 ## Steps
 
-1. Read `.claude/handoff.md`
-2. If missing, find latest `handoff-*.md` in `.claude/handoffs/`
+1. Read `.handoff/handoff.md`
+2. If missing, find latest `handoff-*.md` in `.handoff/handoffs/`
 3. If neither found: tell user "No handoff file. Run /handoff-save first."
 4. If found:
    - Parse: Task Description, Current Status, Key Decisions, Failed Approaches, Blockers, Next Steps

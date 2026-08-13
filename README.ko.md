@@ -32,7 +32,7 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 
 ### 도구 (Tools)
 
-- **`generate_handoff_manifest`** — 현재 프로젝트의 `.claude/handoff.md`에 구조화된 핸드오프 문서를 저장합니다. `.claude/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`에도 아카이브됩니다 (최근 50개 파일만 유지, 자동 정리). 동시에 `.claude/handoffs/index.md`에 한 줄 요약(날짜, 키워드, 헤드라인, 경로)을 upsert해 — 아카이브 파일을 전부 열지 않고도 grep 한 번으로 과거 세션을 찾을 수 있는 경량 인덱스를 유지합니다. 한 세션 안에서 여러 번 저장돼도(예: 긴 세션에서 `PreCompact`와 `Stop`이 둘 다 발동) 새 파일을 쌓지 않고 그 세션의 아카이브 파일·인덱스 줄을 그대로 갱신합니다 — MCP 서버 프로세스 하나당 세션ID 하나를 부여해 frontmatter `session:` 필드에 기록합니다.
+- **`generate_handoff_manifest`** — 현재 프로젝트의 `.handoff/handoff.md`에 구조화된 핸드오프 문서를 저장합니다. `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`에도 아카이브됩니다 (최근 50개 파일만 유지, 자동 정리). 동시에 `.handoff/handoffs/index.md`에 한 줄 요약(날짜, 키워드, 헤드라인, 경로)을 upsert해 — 아카이브 파일을 전부 열지 않고도 grep 한 번으로 과거 세션을 찾을 수 있는 경량 인덱스를 유지합니다. 한 세션 안에서 여러 번 저장돼도(예: 긴 세션에서 `PreCompact`와 `Stop`이 둘 다 발동) 새 파일을 쌓지 않고 그 세션의 아카이브 파일·인덱스 줄을 그대로 갱신합니다 — MCP 서버 프로세스 하나당 세션ID 하나를 부여해 frontmatter `session:` 필드에 기록합니다.
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |----------|------|------|------|
@@ -52,8 +52,8 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 | 명령어 | 동작 |
 |--------|------|
 | `/handoff-save` | Haiku 서브에이전트에 위임 — 세션 컨텍스트 초안 작성 + `generate_handoff_manifest` 호출까지 직접 수행 (3-6k 토큰 초안이 비싼 메인 모델을 거치지 않음) |
-| `/handoff-resume` | `.claude/handoff.md` 읽어 새 세션에서 컨텍스트 복원 |
-| `/handoff-search` | `.claude/handoffs/index.md`를 grep해 주제와 일치하는 과거 세션 검색 — DB·임베딩 없음 |
+| `/handoff-resume` | `.handoff/handoff.md` 읽어 새 세션에서 컨텍스트 복원 |
+| `/handoff-search` | `.handoff/handoffs/index.md`를 grep해 주제와 일치하는 과거 세션 검색 — DB·임베딩 없음 |
 
 ### 훅 (Hooks)
 
@@ -148,7 +148,7 @@ Claude Code와 동일한 `SessionStart`, `PreCompact`, `Stop` 훅이 켜지고 �
 
 ### Claude Code
 
-네 훅 모두 자동으로 돕니다 — `SessionStart`는 핸드오프 있으면 짧은 힌트 노출, `UserPromptSubmit`은 프롬프트가 저장된 키워드와 일치하면 전체 컨텍스트 자동 로드, `PreCompact`는 압축 전 저장, `Stop`은 핸드오프가 오래됐을 때 경고. 생성된 문서는 `.claude/handoff.md`에 저장됩니다.
+네 훅 모두 자동으로 돕니다 — `SessionStart`는 핸드오프 있으면 짧은 힌트 노출, `UserPromptSubmit`은 프롬프트가 저장된 키워드와 일치하면 전체 컨텍스트 자동 로드, `PreCompact`는 압축 전 저장, `Stop`은 핸드오프가 오래됐을 때 경고. 생성된 문서는 `.handoff/handoff.md`에 저장됩니다.
 
 **수동 체크포인트:**
 ```
@@ -171,7 +171,7 @@ Claude Code와 동일한 `SessionStart`, `PreCompact`, `Stop` 훅이 켜지고 �
 
 | 이벤트 | 동작 |
 |--------|------|
-| `SessionStart` | `.claude/handoff.md`를 읽어 컨텍스트로 주입 |
+| `SessionStart` | `.handoff/handoff.md`를 읽어 컨텍스트로 주입 |
 | `PreCompact` | 압축 전 `handoff-drafter` 서브에이전트에 위임 지시 |
 | `Stop` | 핸드오프가 오래됐거나 없으면 경고 |
 

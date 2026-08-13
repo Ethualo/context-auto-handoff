@@ -16,9 +16,31 @@ export function readStdinJson() {
   }
 }
 
+// One-time move from the old .claude/-based storage to the neutral .handoff/ dir,
+// so upgrading users don't silently lose their handoff history.
+function migrateLegacyHandoffDir(projectRoot, handoffDir) {
+  if (fs.existsSync(handoffDir)) return;
+
+  const legacyDir = path.join(projectRoot, '.claude');
+  const legacyHandoffPath = path.join(legacyDir, 'handoff.md');
+  const legacyHandoffsDir = path.join(legacyDir, 'handoffs');
+  if (!fs.existsSync(legacyHandoffPath) && !fs.existsSync(legacyHandoffsDir)) return;
+
+  fs.mkdirSync(handoffDir, { recursive: true });
+  if (fs.existsSync(legacyHandoffPath)) {
+    fs.renameSync(legacyHandoffPath, path.join(handoffDir, 'handoff.md'));
+  }
+  if (fs.existsSync(legacyHandoffsDir)) {
+    fs.renameSync(legacyHandoffsDir, path.join(handoffDir, 'handoffs'));
+  }
+}
+
 // Returns null when the handoff is missing, unparseable, or older than STALE_DAYS.
 export function readHandoff(projectRoot) {
-  const handoffPath = path.join(projectRoot, '.claude', 'handoff.md');
+  const handoffDir = path.join(projectRoot, '.handoff');
+  migrateLegacyHandoffDir(projectRoot, handoffDir);
+
+  const handoffPath = path.join(handoffDir, 'handoff.md');
   if (!fs.existsSync(handoffPath)) return null;
 
   let raw;

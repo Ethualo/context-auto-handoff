@@ -29,15 +29,16 @@ server.tool('generate_handoff_manifest', {
 }, async ({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, workingDirectory }) => {
     try {
         const projectRoot = workingDirectory || process.env['CLAUDE_PROJECT_DIR'] || process.cwd();
-        const claudeDir = path.join(projectRoot, '.claude');
-        const handoffsDir = path.join(claudeDir, 'handoffs');
-        fs.mkdirSync(claudeDir, { recursive: true });
+        const handoffDir = path.join(projectRoot, '.handoff');
+        const handoffsDir = path.join(handoffDir, 'handoffs');
+        migrateLegacyHandoffDir(projectRoot, handoffDir);
+        fs.mkdirSync(handoffDir, { recursive: true });
         fs.mkdirSync(handoffsDir, { recursive: true });
         const now = new Date();
         const displayTime = now.toLocaleString();
         const timestamp = now.toISOString().replace(/[:.]/g, '-');
         const content = buildMarkdown({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, displayTime, project: path.basename(projectRoot), isoDate: now.toISOString(), sessionId });
-        const mainPath = path.join(claudeDir, 'handoff.md');
+        const mainPath = path.join(handoffDir, 'handoff.md');
         fs.writeFileSync(mainPath, content, 'utf-8');
         // Reuse this session's own archive file across repeat saves (PreCompact/Stop can
         // both fire in one long session) instead of piling up near-duplicate archives.
@@ -72,6 +73,24 @@ server.tool('generate_handoff_manifest', {
         };
     }
 });
+// One-time move from the old .claude/-based storage to the neutral .handoff/ dir,
+// so upgrading users don't silently lose their handoff history.
+function migrateLegacyHandoffDir(projectRoot, handoffDir) {
+    if (fs.existsSync(handoffDir))
+        return;
+    const legacyDir = path.join(projectRoot, '.claude');
+    const legacyHandoffPath = path.join(legacyDir, 'handoff.md');
+    const legacyHandoffsDir = path.join(legacyDir, 'handoffs');
+    if (!fs.existsSync(legacyHandoffPath) && !fs.existsSync(legacyHandoffsDir))
+        return;
+    fs.mkdirSync(handoffDir, { recursive: true });
+    if (fs.existsSync(legacyHandoffPath)) {
+        fs.renameSync(legacyHandoffPath, path.join(handoffDir, 'handoff.md'));
+    }
+    if (fs.existsSync(legacyHandoffsDir)) {
+        fs.renameSync(legacyHandoffsDir, path.join(handoffDir, 'handoffs'));
+    }
+}
 function upsertIndexEntry(handoffsDir, entry) {
     const indexPath = path.join(handoffsDir, 'index.md');
     const headline = entry.headline.replace(/\|/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120);
