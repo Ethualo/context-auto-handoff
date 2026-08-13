@@ -1,6 +1,6 @@
 {
   "name": "claude-context-handoff",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Automatically saves session context and generates handoff manifests before Claude compacts or stops.",
   "author": {
     "name": "Ethualo",
