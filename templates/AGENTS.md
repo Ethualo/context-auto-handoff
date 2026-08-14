@@ -27,7 +27,7 @@ If the `handoff-drafter` subagent is unavailable, fall back to calling `generate
 | `blockers` | optional | Unresolved errors or open questions |
 | `workingDirectory` | recommended | Absolute path to this project's root. Pass it explicitly — do not rely on the tool's cwd fallback. |
 
-Output is saved to `.handoff/handoff.md` (latest) and `.handoff/handoffs/handoff-{timestamp}.md` (archive).
+Output is saved to `.handoff/handoff.md` (latest) and `.handoff/handoffs/handoff-{timestamp}.md` (archive). If `implicitRules` or `keyDecisions` are given, the tool also upserts a `## Session Learnings` section into this file (`AGENTS.md`) — and into `CLAUDE.md` too, if that also exists in the project — so the distilled context loads automatically at the start of every session, not just via a handoff read.
 
 ## Rules
 

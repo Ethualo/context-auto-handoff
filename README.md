@@ -24,7 +24,7 @@ Handoff content is written in **telegraphese** (no articles, no filler, no code 
 
 Drafting (typically 3-6k tokens per save) is delegated to a Haiku subagent, which also calls `generate_handoff_manifest` itself — the draft never round-trips through the main-session model.
 
-Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md` on every save, so it's always loaded — not just when you resume a handoff.
+Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md` and/or `AGENTS.md` (whichever already exist in the project) on every save, so it's always loaded — not just when you resume a handoff.
 
 ---
 

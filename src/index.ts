@@ -74,12 +74,13 @@ server.tool(
 
       pruneHandoffs(handoffsDir, 50);
 
-      const claudeMdPath = upsertClaudeMdSection(projectRoot, implicitRules ?? [], keyDecisions ?? []);
+      const memoryDocPaths = upsertMemoryDocSection(projectRoot, implicitRules ?? [], keyDecisions ?? []);
+      const memoryDocLines = memoryDocPaths.map(p => `\n${path.basename(p)} updated: ${p}`).join('');
 
       return {
         content: [{
           type: 'text',
-          text: `Handoff saved.\nLatest: ${mainPath}\nArchive: ${archivePath}${claudeMdPath ? `\nCLAUDE.md updated: ${claudeMdPath}` : ''}`
+          text: `Handoff saved.\nLatest: ${mainPath}\nArchive: ${archivePath}${memoryDocLines}`
         }]
       };
     } catch (error: any) {
@@ -236,35 +237,45 @@ function buildMarkdown(params: {
   return sections.join('\n');
 }
 
-const CLAUDE_MD_BEGIN = '<!-- handoff:learnings:begin -->';
-const CLAUDE_MD_END = '<!-- handoff:learnings:end -->';
+const MEMORY_DOC_BEGIN = '<!-- handoff:learnings:begin -->';
+const MEMORY_DOC_END = '<!-- handoff:learnings:end -->';
 
-// Replaces (not appends) the auto-managed section on every save, so CLAUDE.md
-// reflects the latest distilled context instead of growing unbounded across sessions.
-function upsertClaudeMdSection(projectRoot: string, implicitRules: string[], keyDecisions: string[]): string | null {
-  if (implicitRules.length === 0 && keyDecisions.length === 0) return null;
+// The "always loaded" project memory file differs by tool: Claude Code reads
+// CLAUDE.md, Codex reads AGENTS.md. Update whichever already exist so the
+// section lands wherever the calling tool actually looks; if neither exists
+// yet, default to CLAUDE.md.
+const MEMORY_DOC_CANDIDATES = ['CLAUDE.md', 'AGENTS.md'];
 
-  const claudeMdPath = path.join(projectRoot, 'CLAUDE.md');
+// Replaces (not appends) the auto-managed section on every save, so the memory
+// doc reflects the latest distilled context instead of growing unbounded across sessions.
+function upsertMemoryDocSection(projectRoot: string, implicitRules: string[], keyDecisions: string[]): string[] {
+  if (implicitRules.length === 0 && keyDecisions.length === 0) return [];
 
-  const parts: string[] = [`${CLAUDE_MD_BEGIN}`, `## Session Learnings (auto-updated by handoff)`, ``];
+  const parts: string[] = [`${MEMORY_DOC_BEGIN}`, `## Session Learnings (auto-updated by handoff)`, ``];
   if (implicitRules.length > 0) {
     parts.push(`### Implicit Rules`, ...implicitRules.map(r => `- ${r}`), ``);
   }
   if (keyDecisions.length > 0) {
     parts.push(`### Key Decisions`, ...keyDecisions.map(d => `- ${d}`), ``);
   }
-  parts.push(CLAUDE_MD_END);
+  parts.push(MEMORY_DOC_END);
   const section = parts.join('\n');
+  const blockRegex = new RegExp(`${MEMORY_DOC_BEGIN}[\\s\\S]*?${MEMORY_DOC_END}`);
 
-  const existing = fs.existsSync(claudeMdPath) ? fs.readFileSync(claudeMdPath, 'utf-8') : `# CLAUDE.md\n`;
-  const blockRegex = new RegExp(`${CLAUDE_MD_BEGIN}[\\s\\S]*?${CLAUDE_MD_END}`);
+  const targetNames = MEMORY_DOC_CANDIDATES.filter(name => fs.existsSync(path.join(projectRoot, name)));
+  if (targetNames.length === 0) targetNames.push('CLAUDE.md');
 
-  const updated = blockRegex.test(existing)
-    ? existing.replace(blockRegex, section)
-    : `${existing.trimEnd()}\n\n${section}\n`;
+  return targetNames.map(name => {
+    const docPath = path.join(projectRoot, name);
+    const existing = fs.existsSync(docPath) ? fs.readFileSync(docPath, 'utf-8') : `# ${name}\n`;
 
-  fs.writeFileSync(claudeMdPath, updated, 'utf-8');
-  return claudeMdPath;
+    const updated = blockRegex.test(existing)
+      ? existing.replace(blockRegex, section)
+      : `${existing.trimEnd()}\n\n${section}\n`;
+
+    fs.writeFileSync(docPath, updated, 'utf-8');
+    return docPath;
+  });
 }
 
 async function main() {
