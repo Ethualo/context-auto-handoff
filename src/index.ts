@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 
 const server = new McpServer({
   name: 'context-handoff-manager',
-  version: '1.3.0'
+  version: '1.3.1'
 });
 
 const ARCHIVE_KEEP = 50;
