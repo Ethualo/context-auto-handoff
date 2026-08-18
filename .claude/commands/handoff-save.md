@@ -19,5 +19,5 @@ Saves context to `.handoff/handoff.md` and timestamped archive to `.handoff/hand
 
 3. Confirm to user:
    - Latest: `.handoff/handoff.md`
-   - Archive: `.handoff/handoffs/handoff-{timestamp}.md`
+   - Archive: `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`
    - Next session: run `/handoff-resume` or SessionStart hook auto-restores

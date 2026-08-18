@@ -24,7 +24,8 @@
     "setup": "node scripts/setup.js",
     "setup:unix": "bash scripts/setup.sh",
     "setup:win": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/selfcheck.mjs"
   },
   "license": "MIT",
   "devDependencies": {

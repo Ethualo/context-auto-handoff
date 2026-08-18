@@ -2984,7 +2984,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3642,7 +3642,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3900,7 +3900,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -18980,7 +18980,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -18997,7 +18997,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -19075,7 +19075,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -19336,12 +19336,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -20441,7 +20441,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21090,12 +21090,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -21109,13 +21109,16 @@ var server = new McpServer({
   name: "context-handoff-manager",
   version: "1.3.0"
 });
+var ARCHIVE_KEEP = 50;
+var INDEX_FILE = "index.md";
 var sessionId = randomUUID().slice(0, 8);
-var lastArchivePath = null;
+var lastArchive = null;
 server.tool(
   "generate_handoff_manifest",
+  "Save this session's working context to .handoff/handoff.md plus a timestamped archive, so the next session can resume without re-deriving decisions, blockers, and next steps.",
   {
     summary: external_exports.string().optional().describe("Detailed session recap in English \u2014 omit if other fields cover it"),
-    nextSteps: external_exports.array(external_exports.string()).describe("Tasks to continue immediately in the next session. Write in English."),
+    nextSteps: external_exports.array(external_exports.string()).min(1).describe("Tasks to continue immediately in the next session. Write in English."),
     taskDescription: external_exports.string().optional().describe("High-level goal + core intent (why this matters). Use telegraphese \u2014 drop articles/pronouns. Write in English."),
     currentStatus: external_exports.string().optional().describe("What is done vs what remains. State why, not just what. Write in English."),
     keyDecisions: external_exports.array(external_exports.string()).optional().describe('Architecture choices and why \u2014 prevents post-compaction amnesia. Format: "Decision: X \u2014 Reason: Y". Write in English.'),
@@ -21128,41 +21131,54 @@ server.tool(
   },
   async ({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, workingDirectory }) => {
     try {
-      const projectRoot = workingDirectory || process.env["CLAUDE_PROJECT_DIR"] || process.cwd();
+      const { projectRoot, warnings } = resolveProjectRoot(workingDirectory);
       const handoffDir = path.join(projectRoot, ".handoff");
       const handoffsDir = path.join(handoffDir, "handoffs");
-      migrateLegacyHandoffDir(projectRoot, handoffDir);
-      fs.mkdirSync(handoffDir, { recursive: true });
       fs.mkdirSync(handoffsDir, { recursive: true });
+      warnings.push(...absorbLegacyHandoffs(projectRoot, handoffsDir));
       const now = /* @__PURE__ */ new Date();
-      const displayTime = now.toLocaleString();
-      const timestamp = now.toISOString().replace(/[:.]/g, "-");
-      const content = buildMarkdown({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, displayTime, project: path.basename(projectRoot), isoDate: now.toISOString(), sessionId });
+      const cleanKeywords = sanitizeKeywords(keywords);
+      const headline = oneLine(taskDescription || summary || nextSteps[0] || "(no summary)");
+      const content = buildMarkdown({
+        summary,
+        nextSteps,
+        taskDescription,
+        currentStatus,
+        keyDecisions,
+        failedApproaches,
+        blockers,
+        modifiedFiles,
+        implicitRules,
+        keywords: cleanKeywords,
+        headline,
+        displayTime: now.toLocaleString(),
+        project: path.basename(projectRoot),
+        isoDate: now.toISOString(),
+        sessionId
+      });
       const mainPath = path.join(handoffDir, "handoff.md");
       fs.writeFileSync(mainPath, content, "utf-8");
-      const archivePath = lastArchivePath && fs.existsSync(lastArchivePath) ? lastArchivePath : (() => {
-        const dateDir = path.join(handoffsDir, now.toISOString().slice(0, 10));
-        fs.mkdirSync(dateDir, { recursive: true });
-        return path.join(dateDir, `handoff-${timestamp}.md`);
-      })();
+      const archivePath = lastArchive && lastArchive.root === projectRoot && fs.existsSync(lastArchive.file) ? lastArchive.file : newArchivePath(handoffsDir, now);
+      fs.mkdirSync(path.dirname(archivePath), { recursive: true });
       fs.writeFileSync(archivePath, content, "utf-8");
-      lastArchivePath = archivePath;
-      upsertIndexEntry(handoffsDir, {
-        isoDate: now.toISOString(),
-        keywords: keywords ?? [],
-        headline: taskDescription || summary || nextSteps[0] || "(no summary)",
-        relativePath: path.relative(handoffsDir, archivePath).replace(/\\/g, "/")
-      });
-      pruneHandoffs(handoffsDir, 50);
-      const memoryDocPaths = upsertMemoryDocSection(projectRoot, implicitRules ?? [], keyDecisions ?? []);
-      const memoryDocLines = memoryDocPaths.map((p) => `
+      lastArchive = { root: projectRoot, file: archivePath };
+      pruneArchives(handoffsDir, ARCHIVE_KEEP);
+      rebuildIndex(handoffsDir);
+      let memoryDocLines = "";
+      try {
+        memoryDocLines = upsertMemoryDocSection(projectRoot, implicitRules ?? [], keyDecisions ?? []).map((p) => `
 ${path.basename(p)} updated: ${p}`).join("");
+      } catch (error2) {
+        warnings.push(`Handoff saved, but the memory doc could not be updated: ${error2.message}`);
+      }
+      const warningLines = warnings.map((w) => `
+Warning: ${w}`).join("");
       return {
         content: [{
           type: "text",
           text: `Handoff saved.
 Latest: ${mainPath}
-Archive: ${archivePath}${memoryDocLines}`
+Archive: ${archivePath}${memoryDocLines}${warningLines}`
         }]
       };
     } catch (error2) {
@@ -21173,54 +21189,121 @@ Archive: ${archivePath}${memoryDocLines}`
     }
   }
 );
-function migrateLegacyHandoffDir(projectRoot, handoffDir) {
-  if (fs.existsSync(handoffDir)) return;
+function resolveProjectRoot(workingDirectory) {
+  const envRoot = process.env["CLAUDE_PROJECT_DIR"];
+  const projectRoot = workingDirectory || envRoot || process.cwd();
+  const warnings = [];
+  if (!path.isAbsolute(projectRoot)) {
+    throw new Error(`workingDirectory must be an absolute path (got "${projectRoot}"). A relative path resolves against this server's own cwd, not the project.`);
+  }
+  if (!fs.existsSync(projectRoot)) {
+    throw new Error(`Project root does not exist: ${projectRoot}. Pass workingDirectory as the project's absolute root path.`);
+  }
+  if (workingDirectory && envRoot && path.resolve(workingDirectory) !== path.resolve(envRoot)) {
+    warnings.push(`workingDirectory (${workingDirectory}) differs from CLAUDE_PROJECT_DIR (${envRoot}). The session hooks read CLAUDE_PROJECT_DIR, so this handoff will not be restored automatically.`);
+  }
+  return { projectRoot, warnings };
+}
+function absorbLegacyHandoffs(projectRoot, handoffsDir) {
   const legacyDir = path.join(projectRoot, ".claude");
-  const legacyHandoffPath = path.join(legacyDir, "handoff.md");
-  const legacyHandoffsDir = path.join(legacyDir, "handoffs");
-  if (!fs.existsSync(legacyHandoffPath) && !fs.existsSync(legacyHandoffsDir)) return;
-  fs.mkdirSync(handoffDir, { recursive: true });
-  if (fs.existsSync(legacyHandoffPath)) {
-    fs.renameSync(legacyHandoffPath, path.join(handoffDir, "handoff.md"));
+  const legacyMain = path.join(legacyDir, "handoff.md");
+  const legacyArchives = path.join(legacyDir, "handoffs");
+  let moved = 0;
+  if (fs.existsSync(legacyArchives)) {
+    moved += moveTree(legacyArchives, handoffsDir);
   }
-  if (fs.existsSync(legacyHandoffsDir)) {
-    fs.renameSync(legacyHandoffsDir, path.join(handoffDir, "handoffs"));
+  if (fs.existsSync(legacyMain)) {
+    const stamp = new Date(fs.statSync(legacyMain).mtimeMs).toISOString();
+    const target = path.join(handoffsDir, stamp.slice(0, 10), `handoff-${stamp.replace(/[:.]/g, "-")}.md`);
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(legacyMain);
+    } else {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.renameSync(legacyMain, target);
+      moved++;
+    }
   }
+  return moved > 0 ? [`Absorbed ${moved} handoff file(s) left in legacy .claude/ storage \u2014 an outdated build of this server may still be running.`] : [];
 }
-function upsertIndexEntry(handoffsDir, entry) {
-  const indexPath = path.join(handoffsDir, "index.md");
-  const headline = entry.headline.replace(/\|/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
-  const keywords = entry.keywords.join(", ") || "(none)";
-  const line = `${entry.isoDate} | ${keywords} | ${headline} | ${entry.relativePath}`;
-  let lines = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, "utf-8").split("\n").filter(Boolean) : [];
-  const existingIdx = lines.findIndex((l) => l.endsWith(`| ${entry.relativePath}`));
-  if (existingIdx !== -1) {
-    lines[existingIdx] = line;
-  } else {
-    lines.push(line);
-    const excess = lines.length - 50;
-    if (excess > 0) lines = lines.slice(excess);
+function moveTree(from, to) {
+  let moved = 0;
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name);
+    const dst = path.join(to, entry.name);
+    if (entry.isDirectory()) {
+      fs.mkdirSync(dst, { recursive: true });
+      moved += moveTree(src, dst);
+    } else if (fs.existsSync(dst)) {
+      fs.unlinkSync(src);
+    } else {
+      fs.mkdirSync(to, { recursive: true });
+      fs.renameSync(src, dst);
+      moved++;
+    }
   }
-  fs.writeFileSync(indexPath, lines.join("\n") + "\n", "utf-8");
+  fs.rmSync(from, { recursive: true, force: true });
+  return moved;
 }
-function pruneHandoffs(handoffsDir, keep) {
-  const dateDirs = fs.readdirSync(handoffsDir, { withFileTypes: true }).filter((d) => d.isDirectory());
-  const files = dateDirs.flatMap((d) => {
-    const dirPath = path.join(handoffsDir, d.name);
-    return fs.readdirSync(dirPath).map((name) => ({ path: path.join(dirPath, name), name }));
+function newArchivePath(handoffsDir, now) {
+  const timestamp = now.toISOString().replace(/[:.]/g, "-");
+  return path.join(handoffsDir, now.toISOString().slice(0, 10), `handoff-${timestamp}.md`);
+}
+function listArchives(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return listArchives(full);
+    return entry.name.endsWith(".md") && entry.name !== INDEX_FILE ? [full] : [];
   });
-  files.sort((a, b) => a.name.localeCompare(b.name));
+}
+function pruneArchives(handoffsDir, keep) {
+  const files = listArchives(handoffsDir);
+  files.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
   const excess = files.length - keep;
-  if (excess > 0) {
-    files.slice(0, excess).forEach((f) => fs.unlinkSync(f.path));
-  }
-  for (const d of dateDirs) {
-    const dirPath = path.join(handoffsDir, d.name);
+  if (excess > 0) files.slice(0, excess).forEach((f) => fs.unlinkSync(f));
+  for (const entry of fs.readdirSync(handoffsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dirPath = path.join(handoffsDir, entry.name);
     if (fs.readdirSync(dirPath).length === 0) fs.rmdirSync(dirPath);
   }
 }
+function rebuildIndex(handoffsDir) {
+  const rows = listArchives(handoffsDir).map((file) => {
+    const raw = fs.readFileSync(file, "utf-8");
+    const fields = readFrontmatter(raw);
+    const date3 = fields["date"] || new Date(fs.statSync(file).mtimeMs).toISOString();
+    const keywords = fields["keywords"] || "(none)";
+    const headline = fields["headline"] || deriveHeadline(raw);
+    const relativePath = path.relative(handoffsDir, file).replace(/\\/g, "/");
+    return `${date3} | ${keywords} | ${headline} | ${relativePath}`;
+  });
+  rows.sort();
+  fs.writeFileSync(path.join(handoffsDir, INDEX_FILE), rows.length ? rows.join("\n") + "\n" : "", "utf-8");
+}
+function readFrontmatter(raw) {
+  const match = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
+  const fields = {};
+  for (const line of match[1].split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx > 0) fields[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  return fields;
+}
+function deriveHeadline(raw) {
+  const goal = raw.match(/\*\*Goal:\*\*\s*(.+)/);
+  if (goal) return oneLine(goal[1]);
+  const firstBullet = raw.match(/^[-*]\s+(.+)$/m);
+  return firstBullet ? oneLine(firstBullet[1]) : "(no summary)";
+}
+function oneLine(text) {
+  return text.replace(/\|/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+function sanitizeKeywords(keywords) {
+  return (keywords ?? []).map((k) => k.replace(/[,\r\n]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+}
 function buildMarkdown(params) {
-  const { summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, displayTime, project, isoDate, sessionId: sessionId2 } = params;
+  const { summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, headline, displayTime, project, isoDate, sessionId: sessionId2 } = params;
   const frontmatter = [
     `---`,
     `date: ${isoDate}`,
@@ -21228,7 +21311,8 @@ function buildMarkdown(params) {
     `session: ${sessionId2}`,
     `next_steps_count: ${nextSteps.length}`,
     `has_blockers: ${Boolean(blockers)}`,
-    `keywords: ${(keywords ?? []).join(", ")}`,
+    `keywords: ${keywords.join(", ")}`,
+    `headline: ${headline}`,
     `---`,
     ``
   ].join("\n");
@@ -21246,19 +21330,13 @@ function buildMarkdown(params) {
   const stateLines = [];
   if (currentStatus) stateLines.push(`* **Status:** ${currentStatus}`);
   if (blockers) stateLines.push(`* **Blocker:** ${blockers}`);
-  if (nextSteps.length > 0) stateLines.push(`* **Next Action:** ${nextSteps[0]}`);
-  if (stateLines.length > 0) {
-    sections.push(`## \u{1F4CC} Current State & Next Steps
+  stateLines.push(`* **Next Action:** ${nextSteps[0]}`);
+  sections.push(`## \u{1F4CC} Current State & Next Steps
 ${stateLines.join("\n")}
 `);
-    if (nextSteps.length > 1) {
-      sections.push(`### Remaining Queue
+  if (nextSteps.length > 1) {
+    sections.push(`### Remaining Queue
 ${nextSteps.slice(1).map((s) => `- [ ] ${s}`).join("\n")}
-`);
-    }
-  } else {
-    sections.push(`## \u{1F4CC} Next Steps
-${nextSteps.map((s) => `- [ ] ${s}`).join("\n")}
 `);
   }
   if (modifiedFiles && modifiedFiles.length > 0) {

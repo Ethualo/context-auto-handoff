@@ -38,6 +38,6 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
 
 2. Confirm to user using the agent's short report:
    - Latest: `.handoff/handoff.md`
-   - Archive: `.handoff/handoffs/handoff-{timestamp}.md`
+   - Archive: `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`
    - Memory doc(s): updated path(s), if the tool reported any
    - Next session: run `/handoff-resume` or SessionStart hook auto-restores
