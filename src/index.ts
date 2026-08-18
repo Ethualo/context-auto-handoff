@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 
 const server = new McpServer({
   name: 'context-handoff-manager',
-  version: '1.0.0'
+  version: '1.3.0'
 });
 
 // One MCP server process = one Claude Code session (stdio transport is 1:1 per session).
