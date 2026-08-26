@@ -1,8 +1,8 @@
 node_modules/
-.handoff/handoff.md
-.handoff/handoffs/
+# Whole directory, not file by file: listing handoff.md alone let handoff.json
+# through the moment the tool started writing a second format.
+.handoff/
 .claude/handoff.md
 .claude/handoffs/
 CLAUDE.md
 /AGENTS.md
-.handoff/.injected
