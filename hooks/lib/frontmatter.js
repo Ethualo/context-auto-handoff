@@ -35,6 +35,11 @@ function migrateLegacyHandoffDir(projectRoot, handoffDir) {
   }
 }
 
+// Markdown only, on purpose. The sibling handoff.json exists for external consumers
+// (DevProof and friends); hooks inject their result straight into the session context,
+// where the compact Markdown briefing is the point — pushing the raw record in would
+// spend the tokens the handoff was written to save. Do not "fix" this to read the JSON.
+//
 // Returns null when the handoff is missing, unparseable, or older than STALE_DAYS.
 export function readHandoff(projectRoot) {
   const handoffDir = path.join(projectRoot, '.handoff');

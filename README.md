@@ -32,7 +32,7 @@ Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md
 
 ### Tools
 
-- **`generate_handoff_manifest`** — Writes a structured `.handoff/handoff.md` to the current project directory. Also archives to `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (auto-pruned to the most recent 50 archive files) and upserts a one-line entry in `.handoff/handoffs/index.md` — a compact, grep-friendly index (date, keywords, headline, path) for searching past handoffs without opening every archive file. Repeat saves within the same session (e.g. both `PreCompact` and `Stop` firing in one long session) update that session's own archive file and index line in place instead of piling up near-duplicates — each MCP server process gets one session id, tagged in the `session:` frontmatter field.
+- **`generate_handoff_manifest`** — Writes the handoff twice, from one record: `.handoff/handoff.json` (structured, for external tools) and `.handoff/handoff.md` (the human/resume briefing). Also archives both to `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.json` + `.md` (auto-pruned to the most recent 50 handoffs — a `.json`/`.md` pair counts as one) and upserts a one-line entry in `.handoff/handoffs/index.md` — a compact, grep-friendly index (date, keywords, headline, path) for searching past handoffs without opening every archive file. Repeat saves within the same session (e.g. both `PreCompact` and `Stop` firing in one long session) update that session's own archive file and index line in place instead of piling up near-duplicates — each MCP server process gets one session id, tagged in the `session:` frontmatter field.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -45,14 +45,64 @@ Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md
 | `modifiedFiles` | `string[]` | ✗ | Changed files with delta notes. Format: `"path/to/file: what changed"` — no code |
 | `implicitRules` | `string[]` | ✗ | Tech stack, naming conventions, env vars — anything not derivable from reading code |
 | `blockers` | `string` | ✗ | Unresolved errors or open questions |
-| `workingDirectory` | `string` | ✗ | Absolute path to the project root to write handoff.md to — needed on Windows where `process.cwd()` may resolve to System32 |
+| `workingDirectory` | `string` | ✗ | Absolute path to the project root to write the handoff to — needed on Windows where `process.cwd()` may resolve to System32. Never stored in the JSON: it is an absolute path on the author's machine |
+
+### Storage layout
+
+```text
+.handoff/
+├── handoff.json                                  # latest, structured
+├── handoff.md                                    # latest, human/resume briefing
+└── handoffs/
+    ├── index.md                                  # one row per handoff, not per file
+    └── YYYY-MM-DD/
+        ├── handoff-<timestamp>.json
+        └── handoff-<timestamp>.md
+```
+
+The `.json` and `.md` sharing a basename are **one handoff**. Retention, pruning, the index, and search all count the pair once. Archives that only have one half — Markdown-only files written by older versions, or a JSON whose Markdown twin was deleted — are read and indexed normally; nothing is deleted or force-converted.
+
+Both files are written to a temp path, verified (the JSON is re-parsed, the Markdown checked non-empty), then renamed into place, so a failed save cannot damage the previous handoff. If one format lands and the other does not, the tool returns a `Warning:` line saying so.
+
+### JSON schema
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-26T09:23:00.000Z",
+  "project": "my-project",
+  "session": "a1b2c3d4",
+  "headline": "dual-format handoff",
+  "summary": "session recap or null",
+  "taskDescription": "goal and intent or null",
+  "currentStatus": "done vs remaining, or null",
+  "keyDecisions": [],
+  "failedApproaches": [],
+  "blockers": null,
+  "modifiedFiles": [],
+  "implicitRules": [],
+  "nextSteps": ["at least one"],
+  "keywords": []
+}
+```
+
+- Optional fields are normalized, never omitted: absent strings become `null`, absent lists become `[]`. A reader never has to tell "missing" from "empty".
+- `nextSteps` always holds at least one entry.
+- `schemaVersion` is an integer. It is bumped only when a reader must branch on the shape; new fields are added optionally, so a reader written for an older version keeps working.
+- The JSON holds data only — no section titles, icons, or rendered Markdown strings — and never the absolute `workingDirectory`.
+
+**Both formats are produced by local code from the same MCP input, in the same call.** The Markdown is rendered from the record by a pure function; no extra model call, prompt, or token is spent to add the JSON.
+
+**Which half to read.** Anything that loads a handoff into a model's context — the hooks, `/handoff-resume`, `/handoff-search` — reads the **Markdown**, falling back to the JSON only if the Markdown half is missing. For the same content the Markdown is the cheaper read: it omits empty sections entirely where the JSON keeps every `null` and `[]` key, and its headings ("DO NOT RETRY") carry role cues that bare key names do not. Nothing on that path parses fields programmatically, so the JSON's structure buys it nothing.
+
+**For external consumers (e.g. DevProof):** read the JSON — that is what it is for. Treat its contents as a narrative draft written by the session, not as verified fact — git commits and test results are outside this tool's responsibility and must be verified independently. The handoff deliberately carries no `commit`, `testResult`, or `evidence` fields.
 
 ### Skills
 
 | Command | Behavior |
 |---------|----------|
 | `/handoff-save` | Delegate to a Haiku subagent that drafts session context and calls `generate_handoff_manifest` itself — keeps the 3-6k token draft off the (usually pricier) main-session model |
-| `/handoff-resume` | Read `.handoff/handoff.md` and restore context in a new session |
+| `/handoff-resume` | Read `.handoff/handoff.md` (falling back to `.handoff/handoff.json`) and restore context in a new session |
 | `/handoff-search` | Grep `.handoff/handoffs/index.md` for a topic and surface matching past sessions — no database, no embeddings |
 
 ### Hooks
@@ -148,7 +198,7 @@ This enables the same `SessionStart`, `PreCompact`, and `Stop` hooks as Claude C
 
 ### Claude Code
 
-All four hooks fire automatically — `SessionStart` surfaces a short hint if a handoff exists, `UserPromptSubmit` auto-loads full context when your prompt matches a saved keyword, `PreCompact` saves before compression, `Stop` warns if handoff is stale. Generated manifests are saved to `.handoff/handoff.md`.
+All four hooks fire automatically — `SessionStart` surfaces a short hint if a handoff exists, `UserPromptSubmit` auto-loads full context when your prompt matches a saved keyword, `PreCompact` saves before compression, `Stop` warns if handoff is stale. Generated manifests are saved to `.handoff/handoff.json` and `.handoff/handoff.md`.
 
 **Manual checkpoint:**
 ```
@@ -171,7 +221,7 @@ Same three hooks fire automatically via `.codex/hooks.json`. No slash commands �
 
 | Event | Behavior |
 |-------|----------|
-| `SessionStart` | Reads `.handoff/handoff.md` and injects content as context |
+| `SessionStart` | Reads `.handoff/handoff.md` and injects content as context — the compact briefing, never the raw JSON record |
 | `PreCompact` | Prompts Codex to delegate to the `handoff-drafter` subagent before compression |
 | `Stop` | Warns if handoff is stale (>5 min) or missing |
 

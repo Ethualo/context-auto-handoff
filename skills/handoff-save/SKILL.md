@@ -2,7 +2,7 @@
 description: Save current session context to handoff file. Use when user runs /handoff-save or asks to save session state before ending.
 ---
 
-Save session context to `.handoff/handoff.md` and timestamped archive to `.handoff/handoffs/`. If `implicitRules` or `keyDecisions` are provided, `generate_handoff_manifest` also upserts a `## Session Learnings (auto-updated by handoff)` section into whichever of `CLAUDE.md` / `AGENTS.md` already exist in the project root (both, if both exist; creates `CLAUDE.md` if neither does), replacing the prior auto-managed block (marked by `<!-- handoff:learnings:begin/end -->`) rather than appending — so the memory doc always reflects the latest distilled context instead of growing unbounded.
+Save session context to `.handoff/handoff.json` + `.handoff/handoff.md` and a timestamped archive pair to `.handoff/handoffs/`. Both formats are produced locally from one record inside `generate_handoff_manifest` — never draft the JSON separately, never call the tool twice, and never ask a model to convert one format into the other. If `implicitRules` or `keyDecisions` are provided, `generate_handoff_manifest` also upserts a `## Session Learnings (auto-updated by handoff)` section into whichever of `CLAUDE.md` / `AGENTS.md` already exist in the project root (both, if both exist; creates `CLAUDE.md` if neither does), replacing the prior auto-managed block (marked by `<!-- handoff:learnings:begin/end -->`) rather than appending — so the memory doc always reflects the latest distilled context instead of growing unbounded.
 
 ## Content Generation Rules (STRICT)
 
@@ -22,7 +22,7 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
      - `summary`, `nextSteps` — required
      - `taskDescription`, `currentStatus`, `keyDecisions`, `failedApproaches`, `modifiedFiles`, `implicitRules` — recommended
      - `blockers` — optional
-   - Report back only a short confirmation: saved paths (`.handoff/handoff.md` and the archive path) — not the field content.
+   - Report back only a short confirmation: the saved paths reported by the tool (latest + archive, each a `.json`/`.md` pair) and any warning lines — not the field content.
 
    Fields to draft:
    - taskDescription: final goal + core intent (why)
@@ -37,7 +37,8 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
    If Agent/subagents or the `generate_handoff_manifest` tool are unavailable to the subagent, fall back to drafting and calling the tool directly in the current session.
 
 2. Confirm to user using the agent's short report:
-   - Latest: `.handoff/handoff.md`
-   - Archive: `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`
+   - Latest: `.handoff/handoff.md` (+ `.handoff/handoff.json`)
+   - Archive: `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (+ `.json`)
    - Memory doc(s): updated path(s), if the tool reported any
+   - Any `Warning:` line the tool returned — in particular one saying the two formats fell out of sync
    - Next session: run `/handoff-resume` or SessionStart hook auto-restores

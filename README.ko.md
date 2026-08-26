@@ -32,7 +32,7 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 
 ### 도구 (Tools)
 
-- **`generate_handoff_manifest`** — 현재 프로젝트의 `.handoff/handoff.md`에 구조화된 핸드오프 문서를 저장합니다. `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md`에도 아카이브됩니다 (최근 50개 파일만 유지, 자동 정리). 동시에 `.handoff/handoffs/index.md`에 한 줄 요약(날짜, 키워드, 헤드라인, 경로)을 upsert해 — 아카이브 파일을 전부 열지 않고도 grep 한 번으로 과거 세션을 찾을 수 있는 경량 인덱스를 유지합니다. 한 세션 안에서 여러 번 저장돼도(예: 긴 세션에서 `PreCompact`와 `Stop`이 둘 다 발동) 새 파일을 쌓지 않고 그 세션의 아카이브 파일·인덱스 줄을 그대로 갱신합니다 — MCP 서버 프로세스 하나당 세션ID 하나를 부여해 frontmatter `session:` 필드에 기록합니다.
+- **`generate_handoff_manifest`** — 하나의 레코드에서 두 형식을 동시에 저장합니다: `.handoff/handoff.json`(구조화 — 외부 도구용)과 `.handoff/handoff.md`(사람·resume용 브리핑). 아카이브도 `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.json` + `.md` 쌍으로 저장됩니다 (최근 50개 handoff만 유지 — `.json`/`.md` 쌍은 handoff 하나로 계산). 동시에 `.handoff/handoffs/index.md`에 한 줄 요약(날짜, 키워드, 헤드라인, 경로)을 upsert해 — 아카이브 파일을 전부 열지 않고도 grep 한 번으로 과거 세션을 찾을 수 있는 경량 인덱스를 유지합니다. 한 세션 안에서 여러 번 저장돼도(예: 긴 세션에서 `PreCompact`와 `Stop`이 둘 다 발동) 새 파일을 쌓지 않고 그 세션의 아카이브 파일·인덱스 줄을 그대로 갱신합니다 — MCP 서버 프로세스 하나당 세션ID 하나를 부여해 frontmatter `session:` 필드에 기록합니다.
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |----------|------|------|------|
@@ -45,14 +45,64 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 | `modifiedFiles` | `string[]` | ✗ | 변경 파일과 델타 메모. 형식: `"경로/파일: 무엇을 변경"` — 코드 금지 |
 | `implicitRules` | `string[]` | ✗ | 기술 스택, 네이밍 컨벤션, 환경변수 — 코드에서 유추 불가한 규칙 |
 | `blockers` | `string` | ✗ | 미해결 에러 또는 막혀 있는 문제 |
-| `workingDirectory` | `string` | ✗ | handoff.md를 쓸 프로젝트 루트 절대 경로 — Windows에서 `process.cwd()`가 System32를 가리킬 때 필요 |
+| `workingDirectory` | `string` | ✗ | handoff를 쓸 프로젝트 루트 절대 경로 — Windows에서 `process.cwd()`가 System32를 가리킬 때 필요. 작성자 머신의 절대 경로이므로 JSON에는 절대 포함되지 않음 |
+
+### 저장 구조
+
+```text
+.handoff/
+├── handoff.json                                  # 최신, 구조화
+├── handoff.md                                    # 최신, 사람·resume용 브리핑
+└── handoffs/
+    ├── index.md                                  # 파일당 한 줄이 아니라 handoff당 한 줄
+    └── YYYY-MM-DD/
+        ├── handoff-<timestamp>.json
+        └── handoff-<timestamp>.md
+```
+
+basename이 같은 `.json`과 `.md`는 **handoff 하나**입니다. retention, pruning, index, 검색 모두 쌍을 한 번만 계산합니다. 한쪽만 있는 아카이브(구버전이 남긴 Markdown 전용 파일, 혹은 Markdown 쪽이 삭제된 JSON)도 그대로 읽고 색인합니다 — 삭제하거나 강제 변환하지 않습니다.
+
+두 파일 모두 임시 경로에 먼저 쓰고 검증한 뒤(JSON은 실제로 다시 파싱, Markdown은 비어 있지 않은지 확인) 최종 경로로 교체합니다. 따라서 저장 실패가 기존 handoff를 훼손하지 않습니다. 한 형식만 최신이 된 경우 도구가 `Warning:` 줄로 알려줍니다.
+
+### JSON 스키마
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-26T09:23:00.000Z",
+  "project": "my-project",
+  "session": "a1b2c3d4",
+  "headline": "dual-format handoff",
+  "summary": "session recap or null",
+  "taskDescription": "goal and intent or null",
+  "currentStatus": "done vs remaining, or null",
+  "keyDecisions": [],
+  "failedApproaches": [],
+  "blockers": null,
+  "modifiedFiles": [],
+  "implicitRules": [],
+  "nextSteps": ["at least one"],
+  "keywords": []
+}
+```
+
+- 선택 필드는 누락시키지 않고 정규화합니다: 문자열은 `null`, 리스트는 `[]`. 읽는 쪽이 "없음"과 "비어있음"을 구분할 필요가 없습니다.
+- `nextSteps`는 항상 최소 한 개입니다.
+- `schemaVersion`은 정수입니다. 읽는 쪽이 분기해야 할 때만 올리며, 새 필드는 optional로 추가되므로 이전 버전 기준 리더도 계속 동작합니다.
+- JSON에는 데이터만 들어갑니다 — Markdown 전용 제목·아이콘·렌더링 문자열은 없고, 절대 경로인 `workingDirectory`도 저장하지 않습니다.
+
+**두 형식 모두 동일한 MCP 입력으로 로컬 코드가, 한 번의 호출 안에서 생성합니다.** Markdown은 레코드를 받는 순수 함수가 렌더링하며, JSON을 추가하려고 별도 LLM 호출·프롬프트·토큰을 쓰지 않습니다.
+
+**어느 쪽을 읽는가.** handoff를 모델 컨텍스트에 올리는 쪽 — 훅, `/handoff-resume`, `/handoff-search` — 은 **Markdown**을 읽고, Markdown 쪽이 없을 때만 JSON으로 fallback합니다. 같은 내용이면 Markdown이 더 싸게 읽힙니다: JSON은 빈 필드를 `null`·`[]`로 전부 유지하는 반면 Markdown은 빈 섹션을 아예 렌더링하지 않고, 섹션 제목("DO NOT RETRY")이 키 이름에는 없는 역할 신호를 줍니다. 이 경로에서는 아무것도 필드를 프로그램적으로 파싱하지 않으므로 JSON의 구조는 이득이 없습니다.
+
+**외부 소비자(예: DevProof)용:** JSON을 읽으세요. 단, 내용은 세션이 작성한 서술 초안이지 검증된 사실이 아닙니다 — Git 커밋과 테스트 결과는 이 도구의 책임 밖이며 별도로 검증해야 합니다. handoff는 `commit`, `testResult`, `evidence` 필드를 의도적으로 두지 않습니다.
 
 ### 스킬 (Skills)
 
 | 명령어 | 동작 |
 |--------|------|
 | `/handoff-save` | Haiku 서브에이전트에 위임 — 세션 컨텍스트 초안 작성 + `generate_handoff_manifest` 호출까지 직접 수행 (3-6k 토큰 초안이 비싼 메인 모델을 거치지 않음) |
-| `/handoff-resume` | `.handoff/handoff.md` 읽어 새 세션에서 컨텍스트 복원 |
+| `/handoff-resume` | `.handoff/handoff.md` 읽고(없거나 읽힐 수 없으면 `.handoff/handoff.json`으로 fallback) 새 세션에서 컨텍스트 복원 |
 | `/handoff-search` | `.handoff/handoffs/index.md`를 grep해 주제와 일치하는 과거 세션 검색 — DB·임베딩 없음 |
 
 ### 훅 (Hooks)
@@ -148,7 +198,7 @@ Claude Code와 동일한 `SessionStart`, `PreCompact`, `Stop` 훅이 켜지고 �
 
 ### Claude Code
 
-네 훅 모두 자동으로 돕니다 — `SessionStart`는 핸드오프 있으면 짧은 힌트 노출, `UserPromptSubmit`은 프롬프트가 저장된 키워드와 일치하면 전체 컨텍스트 자동 로드, `PreCompact`는 압축 전 저장, `Stop`은 핸드오프가 오래됐을 때 경고. 생성된 문서는 `.handoff/handoff.md`에 저장됩니다.
+네 훅 모두 자동으로 돕니다 — `SessionStart`는 핸드오프 있으면 짧은 힌트 노출, `UserPromptSubmit`은 프롬프트가 저장된 키워드와 일치하면 전체 컨텍스트 자동 로드, `PreCompact`는 압축 전 저장, `Stop`은 핸드오프가 오래됐을 때 경고. 생성된 문서는 `.handoff/handoff.json`과 `.handoff/handoff.md`에 저장됩니다.
 
 **수동 체크포인트:**
 ```
@@ -171,7 +221,7 @@ Claude Code와 동일한 `SessionStart`, `PreCompact`, `Stop` 훅이 켜지고 �
 
 | 이벤트 | 동작 |
 |--------|------|
-| `SessionStart` | `.handoff/handoff.md`를 읽어 컨텍스트로 주입 |
+| `SessionStart` | `.handoff/handoff.md`를 읽어 컨텍스트로 주입 — 간결한 브리핑만, JSON 원본은 주입하지 않음 |
 | `PreCompact` | 압축 전 `handoff-drafter` 서브에이전트에 위임 지시 |
 | `Stop` | 핸드오프가 오래됐거나 없으면 경고 |
 

@@ -21111,11 +21111,12 @@ var server = new McpServer({
 });
 var ARCHIVE_KEEP = 50;
 var INDEX_FILE = "index.md";
+var SCHEMA_VERSION = 1;
 var sessionId = randomUUID().slice(0, 8);
 var lastArchive = null;
 server.tool(
   "generate_handoff_manifest",
-  "Save this session's working context to .handoff/handoff.md plus a timestamped archive, so the next session can resume without re-deriving decisions, blockers, and next steps.",
+  "Save this session's working context to .handoff/handoff.json + .handoff/handoff.md plus a timestamped archive pair, so the next session can resume without re-deriving decisions, blockers, and next steps.",
   {
     summary: external_exports.string().optional().describe("Detailed session recap in English \u2014 omit if other fields cover it"),
     nextSteps: external_exports.array(external_exports.string()).min(1).describe("Tasks to continue immediately in the next session. Write in English."),
@@ -21127,46 +21128,30 @@ server.tool(
     modifiedFiles: external_exports.array(external_exports.string()).optional().describe('Changed files with delta notes. Format: "path/to/file: what changed" \u2014 NO code snippets, path+delta only.'),
     implicitRules: external_exports.array(external_exports.string()).optional().describe("Tech stack, naming conventions, env vars, implicit project rules \u2014 anything not derivable from reading code. Write in English."),
     keywords: external_exports.array(external_exports.string()).max(8).optional().describe("Short topic/feature tags (e.g. file names, feature names) used to match a future session prompt for auto-resume. Write in English, lowercase, 1-3 words each."),
-    workingDirectory: external_exports.string().optional().describe("Absolute path to the project root where handoff.md should be written. Required on Windows where process.cwd() may return System32.")
+    workingDirectory: external_exports.string().optional().describe("Absolute path to the project root where the handoff should be written. Required on Windows where process.cwd() may return System32.")
   },
-  async ({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, workingDirectory }) => {
+  async (input) => {
     try {
-      const { projectRoot, warnings } = resolveProjectRoot(workingDirectory);
+      const { projectRoot, warnings } = resolveProjectRoot(input.workingDirectory);
       const handoffDir = path.join(projectRoot, ".handoff");
       const handoffsDir = path.join(handoffDir, "handoffs");
       fs.mkdirSync(handoffsDir, { recursive: true });
       warnings.push(...absorbLegacyHandoffs(projectRoot, handoffsDir));
       const now = /* @__PURE__ */ new Date();
-      const cleanKeywords = sanitizeKeywords(keywords);
-      const headline = oneLine(taskDescription || summary || nextSteps[0] || "(no summary)");
-      const content = buildMarkdown({
-        summary,
-        nextSteps,
-        taskDescription,
-        currentStatus,
-        keyDecisions,
-        failedApproaches,
-        blockers,
-        modifiedFiles,
-        implicitRules,
-        keywords: cleanKeywords,
-        headline,
-        displayTime: now.toLocaleString(),
-        project: path.basename(projectRoot),
-        isoDate: now.toISOString(),
-        sessionId
-      });
-      const mainPath = path.join(handoffDir, "handoff.md");
-      fs.writeFileSync(mainPath, content, "utf-8");
-      const archivePath = lastArchive && lastArchive.root === projectRoot && fs.existsSync(lastArchive.file) ? lastArchive.file : newArchivePath(handoffsDir, now);
-      fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-      fs.writeFileSync(archivePath, content, "utf-8");
-      lastArchive = { root: projectRoot, file: archivePath };
+      const record2 = buildRecord(input, path.basename(projectRoot), sessionId, now);
+      const json = serializeRecord(record2);
+      const markdown = renderMarkdown(record2);
+      const mainBase = path.join(handoffDir, "handoff");
+      warnings.push(...writePair(mainBase, json, markdown));
+      const archiveBase = lastArchive && lastArchive.root === projectRoot && pairExists(lastArchive.base) ? lastArchive.base : newArchiveBase(handoffsDir, now);
+      fs.mkdirSync(path.dirname(archiveBase), { recursive: true });
+      warnings.push(...writePair(archiveBase, json, markdown));
+      lastArchive = { root: projectRoot, base: archiveBase };
       pruneArchives(handoffsDir, ARCHIVE_KEEP);
       rebuildIndex(handoffsDir);
       let memoryDocLines = "";
       try {
-        memoryDocLines = upsertMemoryDocSection(projectRoot, implicitRules ?? [], keyDecisions ?? []).map((p) => `
+        memoryDocLines = upsertMemoryDocSection(projectRoot, record2.implicitRules, record2.keyDecisions).map((p) => `
 ${path.basename(p)} updated: ${p}`).join("");
       } catch (error2) {
         warnings.push(`Handoff saved, but the memory doc could not be updated: ${error2.message}`);
@@ -21177,8 +21162,8 @@ Warning: ${w}`).join("");
         content: [{
           type: "text",
           text: `Handoff saved.
-Latest: ${mainPath}
-Archive: ${archivePath}${memoryDocLines}${warningLines}`
+Latest: ${mainBase}.md (+ ${mainBase}.json)
+Archive: ${archiveBase}.md (+ ${archiveBase}.json)${memoryDocLines}${warningLines}`
         }]
       };
     } catch (error2) {
@@ -21189,6 +21174,72 @@ Archive: ${archivePath}${memoryDocLines}${warningLines}`
     }
   }
 );
+function buildRecord(input, project, session, now) {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: now.toISOString(),
+    project,
+    session,
+    headline: oneLine(input.taskDescription || input.summary || input.nextSteps[0] || "(no summary)"),
+    summary: orNull(input.summary),
+    taskDescription: orNull(input.taskDescription),
+    currentStatus: orNull(input.currentStatus),
+    keyDecisions: orList(input.keyDecisions),
+    failedApproaches: orList(input.failedApproaches),
+    blockers: orNull(input.blockers),
+    modifiedFiles: orList(input.modifiedFiles),
+    implicitRules: orList(input.implicitRules),
+    nextSteps: input.nextSteps,
+    keywords: sanitizeKeywords(input.keywords)
+    // workingDirectory is deliberately absent: it is an absolute path on the author's
+    // machine, and the JSON is the format meant to be read by other tools.
+  };
+}
+function orNull(value) {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+function orList(value) {
+  return (value ?? []).filter((item) => typeof item === "string" && item.trim() !== "");
+}
+function serializeRecord(record2) {
+  return JSON.stringify(record2, null, 2) + "\n";
+}
+function pairExists(base) {
+  return fs.existsSync(`${base}.json`) || fs.existsSync(`${base}.md`);
+}
+function writePair(base, json, markdown) {
+  const jsonPath = `${base}.json`;
+  const mdPath = `${base}.md`;
+  const jsonTmp = `${jsonPath}.tmp`;
+  const mdTmp = `${mdPath}.tmp`;
+  const warnings = [];
+  try {
+    fs.writeFileSync(jsonTmp, json, "utf-8");
+    fs.writeFileSync(mdTmp, markdown, "utf-8");
+    const parsed = JSON.parse(fs.readFileSync(jsonTmp, "utf-8"));
+    if (parsed.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.nextSteps) || parsed.nextSteps.length === 0) {
+      throw new Error("serialized handoff failed its own validation");
+    }
+    if (fs.readFileSync(mdTmp, "utf-8").trim() === "") {
+      throw new Error("rendered markdown was empty");
+    }
+    fs.renameSync(jsonTmp, jsonPath);
+    try {
+      fs.renameSync(mdTmp, mdPath);
+    } catch (error2) {
+      warnings.push(`${path.basename(jsonPath)} was updated but ${path.basename(mdPath)} could not be replaced (${error2.message}) \u2014 the two formats are out of sync for this handoff.`);
+    }
+  } finally {
+    for (const tmp of [jsonTmp, mdTmp]) {
+      try {
+        if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+      } catch {
+      }
+    }
+  }
+  return warnings;
+}
 function resolveProjectRoot(workingDirectory) {
   const envRoot = process.env["CLAUDE_PROJECT_DIR"];
   const projectRoot = workingDirectory || envRoot || process.cwd();
@@ -21244,23 +21295,37 @@ function moveTree(from, to) {
   fs.rmSync(from, { recursive: true, force: true });
   return moved;
 }
-function newArchivePath(handoffsDir, now) {
+function newArchiveBase(handoffsDir, now) {
   const timestamp = now.toISOString().replace(/[:.]/g, "-");
-  return path.join(handoffsDir, now.toISOString().slice(0, 10), `handoff-${timestamp}.md`);
+  return path.join(handoffsDir, now.toISOString().slice(0, 10), `handoff-${timestamp}`);
 }
-function listArchives(dir) {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return listArchives(full);
-    return entry.name.endsWith(".md") && entry.name !== INDEX_FILE ? [full] : [];
-  });
+function listArchiveBases(dir) {
+  const bases = /* @__PURE__ */ new Set();
+  const walk = (current) => {
+    if (!fs.existsSync(current)) return;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if ((entry.name.endsWith(".md") || entry.name.endsWith(".json")) && entry.name !== INDEX_FILE) {
+        bases.add(full.slice(0, full.length - path.extname(full).length));
+      }
+    }
+  };
+  walk(dir);
+  return [...bases];
 }
 function pruneArchives(handoffsDir, keep) {
-  const files = listArchives(handoffsDir);
-  files.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
-  const excess = files.length - keep;
-  if (excess > 0) files.slice(0, excess).forEach((f) => fs.unlinkSync(f));
+  const bases = listArchiveBases(handoffsDir);
+  bases.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  const excess = bases.length - keep;
+  if (excess > 0) {
+    for (const base of bases.slice(0, excess)) {
+      for (const file of [`${base}.json`, `${base}.md`]) {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      }
+    }
+  }
   for (const entry of fs.readdirSync(handoffsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dirPath = path.join(handoffsDir, entry.name);
@@ -21268,17 +21333,45 @@ function pruneArchives(handoffsDir, keep) {
   }
 }
 function rebuildIndex(handoffsDir) {
-  const rows = listArchives(handoffsDir).map((file) => {
-    const raw = fs.readFileSync(file, "utf-8");
-    const fields = readFrontmatter(raw);
-    const date3 = fields["date"] || new Date(fs.statSync(file).mtimeMs).toISOString();
-    const keywords = fields["keywords"] || "(none)";
-    const headline = fields["headline"] || deriveHeadline(raw);
-    const relativePath = path.relative(handoffsDir, file).replace(/\\/g, "/");
-    return `${date3} | ${keywords} | ${headline} | ${relativePath}`;
+  const rows = listArchiveBases(handoffsDir).map((base) => {
+    const meta = readArchiveMeta(base);
+    const target = fs.existsSync(`${base}.md`) ? `${base}.md` : `${base}.json`;
+    const relativePath = path.relative(handoffsDir, target).replace(/\\/g, "/");
+    return `${meta.date} | ${meta.keywords} | ${meta.headline} | ${relativePath}`;
   });
   rows.sort();
   fs.writeFileSync(path.join(handoffsDir, INDEX_FILE), rows.length ? rows.join("\n") + "\n" : "", "utf-8");
+}
+function readArchiveMeta(base) {
+  const jsonPath = `${base}.json`;
+  if (fs.existsSync(jsonPath)) {
+    try {
+      const record2 = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+      if (record2 && typeof record2.generatedAt === "string") {
+        return {
+          date: record2.generatedAt,
+          keywords: Array.isArray(record2.keywords) && record2.keywords.length > 0 ? record2.keywords.join(", ") : "(none)",
+          headline: oneLine(String(record2.headline || "(no summary)"))
+        };
+      }
+    } catch {
+    }
+  }
+  const mdPath = `${base}.md`;
+  if (fs.existsSync(mdPath)) {
+    const raw = fs.readFileSync(mdPath, "utf-8");
+    const fields = readFrontmatter(raw);
+    return {
+      date: fields["date"] || new Date(fs.statSync(mdPath).mtimeMs).toISOString(),
+      keywords: fields["keywords"] || "(none)",
+      headline: fields["headline"] || deriveHeadline(raw)
+    };
+  }
+  return {
+    date: new Date(fs.statSync(jsonPath).mtimeMs).toISOString(),
+    keywords: "(none)",
+    headline: "(unreadable handoff)"
+  };
 }
 function readFrontmatter(raw) {
   const match = raw.match(/^---\n([\s\S]*?)\n---/);
@@ -21302,70 +21395,70 @@ function oneLine(text) {
 function sanitizeKeywords(keywords) {
   return (keywords ?? []).map((k) => k.replace(/[,\r\n]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
 }
-function buildMarkdown(params) {
-  const { summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, headline, displayTime, project, isoDate, sessionId: sessionId2 } = params;
+function renderMarkdown(record2) {
   const frontmatter = [
     `---`,
-    `date: ${isoDate}`,
-    `project: ${project}`,
-    `session: ${sessionId2}`,
-    `next_steps_count: ${nextSteps.length}`,
-    `has_blockers: ${Boolean(blockers)}`,
-    `keywords: ${keywords.join(", ")}`,
-    `headline: ${headline}`,
+    `date: ${record2.generatedAt}`,
+    `project: ${record2.project}`,
+    `session: ${record2.session}`,
+    `schema_version: ${record2.schemaVersion}`,
+    `next_steps_count: ${record2.nextSteps.length}`,
+    `has_blockers: ${Boolean(record2.blockers)}`,
+    `keywords: ${record2.keywords.join(", ")}`,
+    `headline: ${record2.headline}`,
     `---`,
     ``
   ].join("\n");
   const sections = [
     frontmatter,
     `# Session Handoff Snapshot`,
-    `> **Generated:** ${displayTime}`,
+    `> **Generated:** ${new Date(record2.generatedAt).toLocaleString()}`,
     ``
   ];
-  if (taskDescription) {
+  if (record2.taskDescription) {
     sections.push(`## \u{1F3AF} High-Level Objective
-* **Goal:** ${taskDescription}
+* **Goal:** ${record2.taskDescription}
 `);
   }
   const stateLines = [];
-  if (currentStatus) stateLines.push(`* **Status:** ${currentStatus}`);
-  if (blockers) stateLines.push(`* **Blocker:** ${blockers}`);
-  stateLines.push(`* **Next Action:** ${nextSteps[0]}`);
+  if (record2.currentStatus) stateLines.push(`* **Status:** ${record2.currentStatus}`);
+  if (record2.blockers) stateLines.push(`* **Blocker:** ${record2.blockers}`);
+  stateLines.push(`* **Next Action:** ${record2.nextSteps[0]}`);
   sections.push(`## \u{1F4CC} Current State & Next Steps
 ${stateLines.join("\n")}
 `);
-  if (nextSteps.length > 1) {
+  if (record2.nextSteps.length > 1) {
     sections.push(`### Remaining Queue
-${nextSteps.slice(1).map((s) => `- [ ] ${s}`).join("\n")}
+${record2.nextSteps.slice(1).map((s) => `- [ ] ${s}`).join("\n")}
 `);
   }
-  if (modifiedFiles && modifiedFiles.length > 0) {
+  if (record2.modifiedFiles.length > 0) {
     sections.push(`## \u{1F6E0}\uFE0F Modified Files Delta
-${modifiedFiles.map((f) => `* ${f}`).join("\n")}
+${record2.modifiedFiles.map((f) => `* ${f}`).join("\n")}
 `);
   }
-  if (failedApproaches && failedApproaches.length > 0) {
+  if (record2.failedApproaches.length > 0) {
     sections.push(`## \u{1F6AB} Failed Approaches (DO NOT RETRY)
-${failedApproaches.map((f) => `* ${f}`).join("\n")}
+${record2.failedApproaches.map((f) => `* ${f}`).join("\n")}
 `);
   }
-  if (implicitRules && implicitRules.length > 0) {
+  if (record2.implicitRules.length > 0) {
     sections.push(`## \u{1F511} Crucial Context & Implicit Rules
-${implicitRules.map((r) => `* ${r}`).join("\n")}
+${record2.implicitRules.map((r) => `* ${r}`).join("\n")}
 `);
   }
-  if (keyDecisions && keyDecisions.length > 0) {
+  if (record2.keyDecisions.length > 0) {
     sections.push(`## Key Decisions
-${keyDecisions.map((d) => `- ${d}`).join("\n")}
+${record2.keyDecisions.map((d) => `- ${d}`).join("\n")}
 `);
   }
-  if (summary) {
+  if (record2.summary) {
     sections.push(`## Summary
-${summary}
+${record2.summary}
 `);
   }
   sections.push(`---
-*A short hint surfaces on session start; full context loads only if your next prompt matches a keyword above, or via manual \`/handoff-resume\`.*`);
+*A short hint surfaces on session start; full context loads only if your next prompt matches a keyword above, or via manual \`/handoff-resume\`. The same record is available as a sibling \`.json\` file for external tools.*`);
   return sections.join("\n");
 }
 var MEMORY_DOC_BEGIN = "<!-- handoff:learnings:begin -->";

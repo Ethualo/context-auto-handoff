@@ -14,18 +14,44 @@ const server = new McpServer({
 const ARCHIVE_KEEP = 50;
 const INDEX_FILE = 'index.md';
 
+// Bump only when the JSON shape changes in a way a reader must branch on. Readers of an
+// older version must stay able to read a newer file, so new fields are additive-optional.
+const SCHEMA_VERSION = 1;
+
+// The single source of truth for a save. Both output formats are derived from one of
+// these — Markdown is rendered from it, JSON is a straight serialization of it — so the
+// two can never drift, and neither costs an extra model call to produce.
+type HandoffRecord = {
+  schemaVersion: number;
+  generatedAt: string;
+  project: string;
+  session: string;
+  headline: string;
+  summary: string | null;
+  taskDescription: string | null;
+  currentStatus: string | null;
+  keyDecisions: string[];
+  failedApproaches: string[];
+  blockers: string | null;
+  modifiedFiles: string[];
+  implicitRules: string[];
+  nextSteps: string[];
+  keywords: string[];
+};
+
 // One MCP server process = one Claude Code session (stdio transport is 1:1 per session).
 // Reusing this id lets repeated saves within the same session update the same archive
 // file instead of piling up near-duplicate entries every time PreCompact/Stop fires.
 const sessionId = randomUUID().slice(0, 8);
 // Keyed by project root: a single server process can be asked to save into more than
 // one root, and reusing another root's archive path would scatter files across projects.
-let lastArchive: { root: string; file: string } | null = null;
+// Stored without an extension — one archive is the .json/.md pair sharing this basename.
+let lastArchive: { root: string; base: string } | null = null;
 
 
 server.tool(
   'generate_handoff_manifest',
-  'Save this session\'s working context to .handoff/handoff.md plus a timestamped archive, so the next session can resume without re-deriving decisions, blockers, and next steps.',
+  'Save this session\'s working context to .handoff/handoff.json + .handoff/handoff.md plus a timestamped archive pair, so the next session can resume without re-deriving decisions, blockers, and next steps.',
   {
     summary: z.string().optional().describe('Detailed session recap in English — omit if other fields cover it'),
     nextSteps: z.array(z.string()).min(1).describe('Tasks to continue immediately in the next session. Write in English.'),
@@ -37,11 +63,11 @@ server.tool(
     modifiedFiles: z.array(z.string()).optional().describe('Changed files with delta notes. Format: "path/to/file: what changed" — NO code snippets, path+delta only.'),
     implicitRules: z.array(z.string()).optional().describe('Tech stack, naming conventions, env vars, implicit project rules — anything not derivable from reading code. Write in English.'),
     keywords: z.array(z.string()).max(8).optional().describe('Short topic/feature tags (e.g. file names, feature names) used to match a future session prompt for auto-resume. Write in English, lowercase, 1-3 words each.'),
-    workingDirectory: z.string().optional().describe('Absolute path to the project root where handoff.md should be written. Required on Windows where process.cwd() may return System32.')
+    workingDirectory: z.string().optional().describe('Absolute path to the project root where the handoff should be written. Required on Windows where process.cwd() may return System32.')
   },
-  async ({ summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, workingDirectory }) => {
+  async (input) => {
     try {
-      const { projectRoot, warnings } = resolveProjectRoot(workingDirectory);
+      const { projectRoot, warnings } = resolveProjectRoot(input.workingDirectory);
       const handoffDir = path.join(projectRoot, '.handoff');
       const handoffsDir = path.join(handoffDir, 'handoffs');
 
@@ -49,31 +75,24 @@ server.tool(
       warnings.push(...absorbLegacyHandoffs(projectRoot, handoffsDir));
 
       const now = new Date();
-      const cleanKeywords = sanitizeKeywords(keywords);
-      const headline = oneLine(taskDescription || summary || nextSteps[0] || '(no summary)');
+      const record = buildRecord(input, path.basename(projectRoot), sessionId, now);
 
-      const content = buildMarkdown({
-        summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches,
-        blockers, modifiedFiles, implicitRules,
-        keywords: cleanKeywords,
-        headline,
-        displayTime: now.toLocaleString(),
-        project: path.basename(projectRoot),
-        isoDate: now.toISOString(),
-        sessionId
-      });
+      // Both payloads are produced before anything on disk is touched, so a serialization
+      // or rendering failure leaves the previous latest handoff intact.
+      const json = serializeRecord(record);
+      const markdown = renderMarkdown(record);
 
-      const mainPath = path.join(handoffDir, 'handoff.md');
-      fs.writeFileSync(mainPath, content, 'utf-8');
+      const mainBase = path.join(handoffDir, 'handoff');
+      warnings.push(...writePair(mainBase, json, markdown));
 
-      // Reuse this session's own archive file across repeat saves (PreCompact/Stop can
+      // Reuse this session's own archive pair across repeat saves (PreCompact/Stop can
       // both fire in one long session) instead of piling up near-duplicate archives.
-      const archivePath = lastArchive && lastArchive.root === projectRoot && fs.existsSync(lastArchive.file)
-        ? lastArchive.file
-        : newArchivePath(handoffsDir, now);
-      fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-      fs.writeFileSync(archivePath, content, 'utf-8');
-      lastArchive = { root: projectRoot, file: archivePath };
+      const archiveBase = lastArchive && lastArchive.root === projectRoot && pairExists(lastArchive.base)
+        ? lastArchive.base
+        : newArchiveBase(handoffsDir, now);
+      fs.mkdirSync(path.dirname(archiveBase), { recursive: true });
+      warnings.push(...writePair(archiveBase, json, markdown));
+      lastArchive = { root: projectRoot, base: archiveBase };
 
       pruneArchives(handoffsDir, ARCHIVE_KEEP);
       // Rebuilt from the surviving files, so pruned archives can never leave dangling index rows.
@@ -82,7 +101,7 @@ server.tool(
       // A memory-doc failure must not report the already-written handoff as a failed save.
       let memoryDocLines = '';
       try {
-        memoryDocLines = upsertMemoryDocSection(projectRoot, implicitRules ?? [], keyDecisions ?? [])
+        memoryDocLines = upsertMemoryDocSection(projectRoot, record.implicitRules, record.keyDecisions)
           .map(p => `\n${path.basename(p)} updated: ${p}`)
           .join('');
       } catch (error: any) {
@@ -94,7 +113,7 @@ server.tool(
       return {
         content: [{
           type: 'text',
-          text: `Handoff saved.\nLatest: ${mainPath}\nArchive: ${archivePath}${memoryDocLines}${warningLines}`
+          text: `Handoff saved.\nLatest: ${mainBase}.md (+ ${mainBase}.json)\nArchive: ${archiveBase}.md (+ ${archiveBase}.json)${memoryDocLines}${warningLines}`
         }]
       };
     } catch (error: any) {
@@ -105,6 +124,103 @@ server.tool(
     }
   }
 );
+
+type ToolInput = {
+  summary?: string;
+  nextSteps: string[];
+  taskDescription?: string;
+  currentStatus?: string;
+  keyDecisions?: string[];
+  failedApproaches?: string[];
+  blockers?: string;
+  modifiedFiles?: string[];
+  implicitRules?: string[];
+  keywords?: string[];
+  workingDirectory?: string;
+};
+
+// Optional fields are normalized to null / [] rather than dropped: an external reader
+// should never have to distinguish "absent" from "empty", and a missing key is the most
+// common cause of a downstream crash.
+function buildRecord(input: ToolInput, project: string, session: string, now: Date): HandoffRecord {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    generatedAt: now.toISOString(),
+    project,
+    session,
+    headline: oneLine(input.taskDescription || input.summary || input.nextSteps[0] || '(no summary)'),
+    summary: orNull(input.summary),
+    taskDescription: orNull(input.taskDescription),
+    currentStatus: orNull(input.currentStatus),
+    keyDecisions: orList(input.keyDecisions),
+    failedApproaches: orList(input.failedApproaches),
+    blockers: orNull(input.blockers),
+    modifiedFiles: orList(input.modifiedFiles),
+    implicitRules: orList(input.implicitRules),
+    nextSteps: input.nextSteps,
+    keywords: sanitizeKeywords(input.keywords)
+    // workingDirectory is deliberately absent: it is an absolute path on the author's
+    // machine, and the JSON is the format meant to be read by other tools.
+  };
+}
+
+function orNull(value?: string): string | null {
+  const trimmed = (value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function orList(value?: string[]): string[] {
+  return (value ?? []).filter(item => typeof item === 'string' && item.trim() !== '');
+}
+
+function serializeRecord(record: HandoffRecord): string {
+  return JSON.stringify(record, null, 2) + '\n';
+}
+
+function pairExists(base: string): boolean {
+  return fs.existsSync(`${base}.json`) || fs.existsSync(`${base}.md`);
+}
+
+// Written to temp files and verified before either final path is replaced, so a failed
+// render, a full disk, or a malformed serialization can never leave a half-written
+// handoff where a readable one used to be. Returns warnings; throws only if the JSON
+// (the machine-readable half) could not be committed at all.
+function writePair(base: string, json: string, markdown: string): string[] {
+  const jsonPath = `${base}.json`;
+  const mdPath = `${base}.md`;
+  const jsonTmp = `${jsonPath}.tmp`;
+  const mdTmp = `${mdPath}.tmp`;
+  const warnings: string[] = [];
+
+  try {
+    fs.writeFileSync(jsonTmp, json, 'utf-8');
+    fs.writeFileSync(mdTmp, markdown, 'utf-8');
+
+    // Read back and re-parse rather than trusting the string we just built: this is what
+    // catches a truncated write, and it is the exact operation every JSON consumer runs.
+    const parsed = JSON.parse(fs.readFileSync(jsonTmp, 'utf-8'));
+    if (parsed.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.nextSteps) || parsed.nextSteps.length === 0) {
+      throw new Error('serialized handoff failed its own validation');
+    }
+    if (fs.readFileSync(mdTmp, 'utf-8').trim() === '') {
+      throw new Error('rendered markdown was empty');
+    }
+
+    // rename over an existing file replaces it on Windows too (MOVEFILE_REPLACE_EXISTING).
+    fs.renameSync(jsonTmp, jsonPath);
+    try {
+      fs.renameSync(mdTmp, mdPath);
+    } catch (error: any) {
+      warnings.push(`${path.basename(jsonPath)} was updated but ${path.basename(mdPath)} could not be replaced (${error.message}) — the two formats are out of sync for this handoff.`);
+    }
+  } finally {
+    for (const tmp of [jsonTmp, mdTmp]) {
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* best effort */ }
+    }
+  }
+
+  return warnings;
+}
 
 // A wrong root is the worst failure mode here: mkdir -p happily invents a whole tree,
 // the save reports success, and the session hooks — which read CLAUDE_PROJECT_DIR —
@@ -179,27 +295,43 @@ function moveTree(from: string, to: string): number {
   return moved;
 }
 
-function newArchivePath(handoffsDir: string, now: Date): string {
+function newArchiveBase(handoffsDir: string, now: Date): string {
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
-  return path.join(handoffsDir, now.toISOString().slice(0, 10), `handoff-${timestamp}.md`);
+  return path.join(handoffsDir, now.toISOString().slice(0, 10), `handoff-${timestamp}`);
 }
 
-function listArchives(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return listArchives(full);
-    return entry.name.endsWith('.md') && entry.name !== INDEX_FILE ? [full] : [];
-  });
+// One handoff is one basename, not one file: the .json/.md pair must count, prune, and
+// index as a single entry, and a legacy archive that only has one of the two still counts.
+function listArchiveBases(dir: string): string[] {
+  const bases = new Set<string>();
+  const walk = (current: string): void => {
+    if (!fs.existsSync(current)) return;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if ((entry.name.endsWith('.md') || entry.name.endsWith('.json')) && entry.name !== INDEX_FILE) {
+        bases.add(full.slice(0, full.length - path.extname(full).length));
+      }
+    }
+  };
+  walk(dir);
+  return [...bases];
 }
 
 function pruneArchives(handoffsDir: string, keep: number): void {
-  const files = listArchives(handoffsDir);
+  const bases = listArchiveBases(handoffsDir);
   // Archive names embed an ISO timestamp, so a name sort is a chronological sort.
-  files.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  bases.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
 
-  const excess = files.length - keep;
-  if (excess > 0) files.slice(0, excess).forEach(f => fs.unlinkSync(f));
+  const excess = bases.length - keep;
+  if (excess > 0) {
+    for (const base of bases.slice(0, excess)) {
+      for (const file of [`${base}.json`, `${base}.md`]) {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      }
+    }
+  }
 
   for (const entry of fs.readdirSync(handoffsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -210,20 +342,59 @@ function pruneArchives(handoffsDir: string, keep: number): void {
 
 // Regenerated from the archive files themselves rather than appended to, so the index
 // can never drift out of sync with what is actually on disk (pruned, migrated, or
-// hand-deleted files all correct themselves on the next save).
+// hand-deleted files all correct themselves on the next save). One row per basename —
+// the JSON and Markdown halves of one handoff must never appear as two search hits.
 function rebuildIndex(handoffsDir: string): void {
-  const rows = listArchives(handoffsDir).map(file => {
-    const raw = fs.readFileSync(file, 'utf-8');
-    const fields = readFrontmatter(raw);
-    const date = fields['date'] || new Date(fs.statSync(file).mtimeMs).toISOString();
-    const keywords = fields['keywords'] || '(none)';
-    const headline = fields['headline'] || deriveHeadline(raw);
-    const relativePath = path.relative(handoffsDir, file).replace(/\\/g, '/');
-    return `${date} | ${keywords} | ${headline} | ${relativePath}`;
+  const rows = listArchiveBases(handoffsDir).map(base => {
+    const meta = readArchiveMeta(base);
+    // The Markdown half is what a resume actually reads, so it is the path published to
+    // readers; a JSON-only archive publishes its .json instead.
+    const target = fs.existsSync(`${base}.md`) ? `${base}.md` : `${base}.json`;
+    const relativePath = path.relative(handoffsDir, target).replace(/\\/g, '/');
+    return `${meta.date} | ${meta.keywords} | ${meta.headline} | ${relativePath}`;
   });
 
   rows.sort();
   fs.writeFileSync(path.join(handoffsDir, INDEX_FILE), rows.length ? rows.join('\n') + '\n' : '', 'utf-8');
+}
+
+// JSON first here, unlike the resume/search read path, which prefers the Markdown: this
+// reader is code, so parsing a real record beats scraping frontmatter, and no tokens are
+// at stake. Markdown frontmatter is the fallback — a malformed JSON half must not cost the
+// whole archive its index row, and archives written before the JSON half existed have none.
+function readArchiveMeta(base: string): { date: string; keywords: string; headline: string } {
+  const jsonPath = `${base}.json`;
+  if (fs.existsSync(jsonPath)) {
+    try {
+      const record = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      if (record && typeof record.generatedAt === 'string') {
+        return {
+          date: record.generatedAt,
+          keywords: Array.isArray(record.keywords) && record.keywords.length > 0 ? record.keywords.join(', ') : '(none)',
+          headline: oneLine(String(record.headline || '(no summary)'))
+        };
+      }
+    } catch {
+      // Fall through to the Markdown half of the same pair.
+    }
+  }
+
+  const mdPath = `${base}.md`;
+  if (fs.existsSync(mdPath)) {
+    const raw = fs.readFileSync(mdPath, 'utf-8');
+    const fields = readFrontmatter(raw);
+    return {
+      date: fields['date'] || new Date(fs.statSync(mdPath).mtimeMs).toISOString(),
+      keywords: fields['keywords'] || '(none)',
+      headline: fields['headline'] || deriveHeadline(raw)
+    };
+  }
+
+  return {
+    date: new Date(fs.statSync(jsonPath).mtimeMs).toISOString(),
+    keywords: '(none)',
+    headline: '(unreadable handoff)'
+  };
 }
 
 function readFrontmatter(raw: string): Record<string, string> {
@@ -257,34 +428,20 @@ function sanitizeKeywords(keywords?: string[]): string[] {
     .filter(Boolean);
 }
 
-function buildMarkdown(params: {
-  summary?: string;
-  nextSteps: string[];
-  taskDescription?: string;
-  currentStatus?: string;
-  keyDecisions?: string[];
-  failedApproaches?: string[];
-  blockers?: string;
-  modifiedFiles?: string[];
-  implicitRules?: string[];
-  keywords: string[];
-  headline: string;
-  displayTime: string;
-  project: string;
-  isoDate: string;
-  sessionId: string;
-}): string {
-  const { summary, nextSteps, taskDescription, currentStatus, keyDecisions, failedApproaches, blockers, modifiedFiles, implicitRules, keywords, headline, displayTime, project, isoDate, sessionId } = params;
-
+// Pure function of the record — no model call, no second draft, no reading the JSON back.
+// Section titles and icons live here and only here: they are presentation, and putting
+// them in the record would make the JSON a rendering artifact instead of data.
+function renderMarkdown(record: HandoffRecord): string {
   const frontmatter = [
     `---`,
-    `date: ${isoDate}`,
-    `project: ${project}`,
-    `session: ${sessionId}`,
-    `next_steps_count: ${nextSteps.length}`,
-    `has_blockers: ${Boolean(blockers)}`,
-    `keywords: ${keywords.join(', ')}`,
-    `headline: ${headline}`,
+    `date: ${record.generatedAt}`,
+    `project: ${record.project}`,
+    `session: ${record.session}`,
+    `schema_version: ${record.schemaVersion}`,
+    `next_steps_count: ${record.nextSteps.length}`,
+    `has_blockers: ${Boolean(record.blockers)}`,
+    `keywords: ${record.keywords.join(', ')}`,
+    `headline: ${record.headline}`,
     `---`,
     ``
   ].join('\n');
@@ -292,44 +449,44 @@ function buildMarkdown(params: {
   const sections: string[] = [
     frontmatter,
     `# Session Handoff Snapshot`,
-    `> **Generated:** ${displayTime}`,
+    `> **Generated:** ${new Date(record.generatedAt).toLocaleString()}`,
     ``
   ];
 
-  if (taskDescription) {
-    sections.push(`## 🎯 High-Level Objective\n* **Goal:** ${taskDescription}\n`);
+  if (record.taskDescription) {
+    sections.push(`## 🎯 High-Level Objective\n* **Goal:** ${record.taskDescription}\n`);
   }
 
   const stateLines: string[] = [];
-  if (currentStatus) stateLines.push(`* **Status:** ${currentStatus}`);
-  if (blockers) stateLines.push(`* **Blocker:** ${blockers}`);
-  stateLines.push(`* **Next Action:** ${nextSteps[0]}`);
+  if (record.currentStatus) stateLines.push(`* **Status:** ${record.currentStatus}`);
+  if (record.blockers) stateLines.push(`* **Blocker:** ${record.blockers}`);
+  stateLines.push(`* **Next Action:** ${record.nextSteps[0]}`);
   sections.push(`## 📌 Current State & Next Steps\n${stateLines.join('\n')}\n`);
-  if (nextSteps.length > 1) {
-    sections.push(`### Remaining Queue\n${nextSteps.slice(1).map(s => `- [ ] ${s}`).join('\n')}\n`);
+  if (record.nextSteps.length > 1) {
+    sections.push(`### Remaining Queue\n${record.nextSteps.slice(1).map(s => `- [ ] ${s}`).join('\n')}\n`);
   }
 
-  if (modifiedFiles && modifiedFiles.length > 0) {
-    sections.push(`## 🛠️ Modified Files Delta\n${modifiedFiles.map(f => `* ${f}`).join('\n')}\n`);
+  if (record.modifiedFiles.length > 0) {
+    sections.push(`## 🛠️ Modified Files Delta\n${record.modifiedFiles.map(f => `* ${f}`).join('\n')}\n`);
   }
 
-  if (failedApproaches && failedApproaches.length > 0) {
-    sections.push(`## 🚫 Failed Approaches (DO NOT RETRY)\n${failedApproaches.map(f => `* ${f}`).join('\n')}\n`);
+  if (record.failedApproaches.length > 0) {
+    sections.push(`## 🚫 Failed Approaches (DO NOT RETRY)\n${record.failedApproaches.map(f => `* ${f}`).join('\n')}\n`);
   }
 
-  if (implicitRules && implicitRules.length > 0) {
-    sections.push(`## 🔑 Crucial Context & Implicit Rules\n${implicitRules.map(r => `* ${r}`).join('\n')}\n`);
+  if (record.implicitRules.length > 0) {
+    sections.push(`## 🔑 Crucial Context & Implicit Rules\n${record.implicitRules.map(r => `* ${r}`).join('\n')}\n`);
   }
 
-  if (keyDecisions && keyDecisions.length > 0) {
-    sections.push(`## Key Decisions\n${keyDecisions.map(d => `- ${d}`).join('\n')}\n`);
+  if (record.keyDecisions.length > 0) {
+    sections.push(`## Key Decisions\n${record.keyDecisions.map(d => `- ${d}`).join('\n')}\n`);
   }
 
-  if (summary) {
-    sections.push(`## Summary\n${summary}\n`);
+  if (record.summary) {
+    sections.push(`## Summary\n${record.summary}\n`);
   }
 
-  sections.push(`---\n*A short hint surfaces on session start; full context loads only if your next prompt matches a keyword above, or via manual \`/handoff-resume\`.*`);
+  sections.push(`---\n*A short hint surfaces on session start; full context loads only if your next prompt matches a keyword above, or via manual \`/handoff-resume\`. The same record is available as a sibling \`.json\` file for external tools.*`);
 
   return sections.join('\n');
 }

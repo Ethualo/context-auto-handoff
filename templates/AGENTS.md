@@ -4,9 +4,9 @@ Copy this file to your project root as `AGENTS.md` when using the `context-hando
 
 ## Session Start
 
-If `.handoff/handoff.md` exists in the project root, read it immediately before doing anything else. Restore all context: task description, current status, key decisions, failed approaches, blockers, and next steps. Begin from the first uncompleted next step.
+If a handoff exists in the project root, read it immediately before doing anything else. Read `.handoff/handoff.md` first — it costs fewer tokens than the JSON for the same content, since it omits empty sections. If it is missing or unreadable, read `.handoff/handoff.json` instead and use its fields. Restore all context: task description, current status, key decisions, failed approaches, blockers, and next steps. Begin from the first uncompleted next step. Do not paste the raw JSON record into the session — it exists for external tools, not for this context.
 
-If the file does not exist, proceed normally.
+If neither file exists, proceed normally.
 
 ## Session End / Before Context Grows Large
 
@@ -27,7 +27,7 @@ If the `handoff-drafter` subagent is unavailable, fall back to calling `generate
 | `blockers` | optional | Unresolved errors or open questions |
 | `workingDirectory` | recommended | Absolute path to this project's root. Pass it explicitly — do not rely on the tool's cwd fallback. |
 
-Output is saved to `.handoff/handoff.md` (latest) and `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (archive). If `implicitRules` or `keyDecisions` are given, the tool also upserts a `## Session Learnings` section into this file (`AGENTS.md`) — and into `CLAUDE.md` too, if that also exists in the project — so the distilled context loads automatically at the start of every session, not just via a handoff read.
+Output is saved twice from one record: `.handoff/handoff.json` + `.handoff/handoff.md` (latest), and `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.json` + `.md` (archive). The Markdown is the human/resume briefing; the JSON is the structured feed for external tools. Both are rendered locally by the tool from the same fields — never draft the JSON yourself and never call the tool twice. If `implicitRules` or `keyDecisions` are given, the tool also upserts a `## Session Learnings` section into this file (`AGENTS.md`) — and into `CLAUDE.md` too, if that also exists in the project — so the distilled context loads automatically at the start of every session, not just via a handoff read.
 
 ## Rules
 
