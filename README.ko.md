@@ -22,7 +22,7 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 
 핸드오프 내용은 **텔레그래피즘**(관사·군더더기·코드 스니펫 없음)으로 작성해 토큰은 아끼면서도 다음 세션에 필요한 결정 맥락은 그대로 남깁니다.
 
-초안 작성(1회 저장당 3-6k 토큰 규모)은 Haiku 서브에이전트가 맡아 `generate_handoff_manifest` 호출까지 직접 수행합니다 — 초안이 메인 세션 모델 컨텍스트를 거치지 않습니다.
+초안 작성(1회 저장당 3-6k 토큰 규모)은 기본적으로 메인 세션에서 수행합니다. 더 저렴한 모델 티어를 실제로 쓸 수 있거나 세션 컨텍스트가 거의 찼을 때만 서브에이전트에 위임하며(이 경우 서브에이전트가 `generate_handoff_manifest`까지 직접 호출), 동일 모델 서브에이전트는 콜드 스타트라 컨텍스트를 다시 써서 넘겨야 하므로 순수 오버헤드입니다.
 
 핸드오프 작성 시 주요 내용(`implicitRules`, `keyDecisions`)은 프로젝트에 이미 존재하는 `CLAUDE.md`·`AGENTS.md`에도 함께 갱신되어, 재개(resume) 없이도 매 세션 자동으로 로드됩니다.
 
@@ -108,7 +108,7 @@ basename이 같은 `.json`과 `.md`는 **handoff 하나**입니다. retention, p
 
 | 명령어 | 동작 |
 |--------|------|
-| `/handoff-save` | Haiku 서브에이전트에 위임 — 세션 컨텍스트 초안 작성 + `generate_handoff_manifest` 호출까지 직접 수행 (3-6k 토큰 초안이 비싼 메인 모델을 거치지 않음) |
+| `/handoff-save` | 세션 컨텍스트 초안 작성 + `generate_handoff_manifest` 호출. 저렴한 티어 서브에이전트를 쓸 수 있거나 컨텍스트가 거의 찼을 때만 위임(서브에이전트가 툴까지 직접 호출), 그 외엔 세션 내 작성 |
 | `/handoff-resume` | `.handoff/handoff.md` 읽고(없거나 읽힐 수 없으면 `.handoff/handoff.json`으로 fallback) 새 세션에서 컨텍스트 복원 |
 | `/handoff-search` | `.handoff/handoffs/index.md`를 grep해 주제와 일치하는 과거 세션 검색 — DB·임베딩 없음 |
 
@@ -118,7 +118,7 @@ Claude Code 훅은 기본 내장. Codex 훅은 `templates/.codex`를 프로젝�
 
 | 이벤트 | 동작 |
 |--------|------|
-| `PreCompact` | 컨텍스트 압축 직전 `handoff-save` 스킬(Haiku 서브에이전트) 호출 지시 |
+| `PreCompact` | 컨텍스트 압축 직전 `handoff-save` 스킬 호출 지시 |
 | `Stop` | 핸드오프 파일이 오래됐거나 없으면 경고 |
 | `SessionStart` | 핸드오프 존재 시 짧은 힌트(경과 시간, 주제)만 노출 — 전체 내용은 키워드 매칭이나 `/handoff-resume`으로 로드 |
 | `UserPromptSubmit` | 프롬프트가 직전 핸드오프의 키워드와 일치하면 전체 컨텍스트 자동 주입 |

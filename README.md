@@ -22,7 +22,7 @@ Claude's context window eventually fills and compacts — losing design decision
 
 Handoff content is written in **telegraphese** (no articles, no filler, no code snippets) and structured to maximize token efficiency while preserving all decision context the next session needs.
 
-Drafting (typically 3-6k tokens per save) is delegated to a Haiku subagent, which also calls `generate_handoff_manifest` itself — the draft never round-trips through the main-session model.
+Drafting (typically 3-6k tokens per save) runs in the main session by default. It is delegated to a cheaper-tier subagent — which then calls `generate_handoff_manifest` itself, so the draft never round-trips back — only when a smaller model tier is actually reachable or the session context is nearly exhausted; a same-model subagent is pure overhead, since it starts cold and the context has to be written out for it anyway.
 
 Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md` and/or `AGENTS.md` (whichever already exist in the project) on every save, so it's always loaded — not just when you resume a handoff.
 
@@ -108,7 +108,7 @@ Both files are written to a temp path, verified (the JSON is re-parsed, the Mark
 
 | Command | Behavior |
 |---------|----------|
-| `/handoff-save` | Delegate to a Haiku subagent that drafts session context and calls `generate_handoff_manifest` itself — keeps the 3-6k token draft off the (usually pricier) main-session model |
+| `/handoff-save` | Draft session context and call `generate_handoff_manifest`. Delegates to a cheaper-tier subagent (which calls the tool itself) when one is reachable or context is nearly full; otherwise drafts in-session |
 | `/handoff-resume` | Read `.handoff/handoff.md` (falling back to `.handoff/handoff.json`) and restore context in a new session |
 | `/handoff-search` | Grep `.handoff/handoffs/index.md` for a topic and surface matching past sessions — no database, no embeddings |
 
@@ -118,7 +118,7 @@ Claude Code hooks are built-in. Codex hooks require copying `templates/.codex` t
 
 | Event | Behavior |
 |-------|----------|
-| `PreCompact` | Prompts the model to invoke the `handoff-save` skill (Haiku subagent) before context compression |
+| `PreCompact` | Prompts the model to invoke the `handoff-save` skill before context compression |
 | `Stop` | Warns if handoff is stale or missing after each response |
 | `SessionStart` | Surfaces a short hint (age, topics) if a handoff exists — full content loads via keyword match or `/handoff-resume` |
 | `UserPromptSubmit` | If your prompt matches a keyword from the last handoff, injects the full handoff content as context automatically |

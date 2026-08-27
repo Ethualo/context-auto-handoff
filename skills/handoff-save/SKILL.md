@@ -17,13 +17,30 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
 
 ## Steps
 
-1. Determine the project root as an absolute path (the directory that should contain `.handoff`) BEFORE spawning the agent. Delegate entire save to subagent (`subagent_type: "general-purpose"`, `run_in_background: false`) via whatever delegation tool this platform exposes (`Agent`/`Task`/equivalent). This is a cheap drafting task — route it to the smallest/cheapest model tier the platform's delegation tool exposes (e.g. `model: "haiku"` on Claude Code), not the main session's model. If the delegation tool has no `model` param, or the tier name/id is unknown for this platform, omit it and let the tool default rather than guess an id and risk an invalid-model error; if the call errors on `model`, retry once without it. Do NOT ask it to return the drafted content to the main session; the draft can be 3k-6k tokens and round-tripping it through the (usually pricier) main-session model wastes those tokens twice. Instead, instruct the agent to do everything itself:
+1. Determine the project root as an absolute path (the directory that should contain `.handoff`). Needed by both branches below.
+
+2. Choose a branch. **Direct generation is the default** — a subagent starts cold and cannot see this conversation, so the main session has to write the context out for it anyway, which is most of the drafting cost. Delegate only when at least one of these holds:
+   - A **cheaper model tier** is actually reachable through the delegation tool (e.g. `model: "haiku"`), so the 3-6k token draft runs on a smaller model than this session.
+   - This session's **context is nearly exhausted** and keeping the draft out of it matters more than the forwarding cost.
+
+   Generate directly — do not delegate — when any of these holds:
+   - The harness forbids calling the delegation tool unless the user asked for it.
+   - The delegation tool exposes no model choice, or its only tier is the model this session already runs on — same model, no quality or cost gain, just a round trip and lost context.
+   - The delegation tool or `generate_handoff_manifest` is unavailable to subagents.
+
+3. **Direct branch:** draft the fields below per the Content Generation Rules and call `generate_handoff_manifest` yourself. `workingDirectory` may be omitted here (the session cwd is already the project root), but passing the absolute path from step 1 is never wrong.
+
+   **Delegate branch:** hand the entire save to a subagent (`subagent_type: "general-purpose"`, `run_in_background: false`) via whatever delegation tool this platform exposes (`Agent`/`Task`/equivalent), with the cheapest model tier it offers. If the tier name/id is unknown for this platform, omit it and let the tool default rather than guess an id and risk an invalid-model error; if the call errors on `model`, retry once without it. Do NOT ask it to return the drafted content to the main session; round-tripping a 3-6k token draft through the (usually pricier) main-session model wastes those tokens twice. Instruct the agent to do everything itself:
    - Read the conversation context it's given and draft the fields below per the Content Generation Rules above.
-   - Call `generate_handoff_manifest` itself with the drafted fields, ALWAYS including `workingDirectory` set to the absolute project root path determined above. The subagent runs with a different cwd (its own scratchpad), so omitting `workingDirectory` writes the handoff to the wrong location — pass it explicitly every time, never rely on the tool's default.
+   - Call `generate_handoff_manifest` itself with the drafted fields, ALWAYS including `workingDirectory` set to the absolute project root path from step 1. The subagent runs with a different cwd (its own scratchpad), so omitting `workingDirectory` writes the handoff to the wrong location — pass it explicitly every time, never rely on the tool's default.
+   - Report back only a short confirmation: the saved paths reported by the tool (latest + archive, each a `.json`/`.md` pair) and any warning lines — not the field content.
+
+   If the delegate branch fails for any reason, fall back to the direct branch rather than retrying delegation.
+
+   Tool call fields:
      - `summary`, `nextSteps` — required
      - `taskDescription`, `currentStatus`, `keyDecisions`, `failedApproaches`, `modifiedFiles`, `implicitRules` — recommended
      - `blockers`, `userContribution`, `userDecisions` — optional
-   - Report back only a short confirmation: the saved paths reported by the tool (latest + archive, each a `.json`/`.md` pair) and any warning lines — not the field content.
 
    Fields to draft:
    - taskDescription: final goal + core intent (why)
@@ -37,9 +54,7 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
    - userContribution: what the HUMAN did themselves — specified, corrected, reviewed, rejected, tested, hand-wrote
    - userDecisions: calls the HUMAN made, as `{decision, reason, alternativesRejected}` — not ones you proposed and they merely let through
 
-   If Agent/subagents or the `generate_handoff_manifest` tool are unavailable to the subagent, fall back to drafting and calling the tool directly in the current session.
-
-2. Confirm to user using the agent's short report:
+4. Confirm to user (from the agent's short report, or from the tool result in the direct branch):
    - Latest: `.handoff/handoff.md` (+ `.handoff/handoff.json`)
    - Archive: `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.md` (+ `.json`)
    - Memory doc(s): updated path(s), if the tool reported any
