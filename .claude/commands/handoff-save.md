@@ -11,11 +11,13 @@ Saves context to `.handoff/handoff.json` + `.handoff/handoff.md` and a timestamp
    - keyDecisions: architecture choices + why (prevents post-compaction amnesia)
    - failedApproaches: already-failed attempts (prevents repeat mistakes)
    - blockers: unresolved errors
+   - userContribution: what the HUMAN did themselves (attribution — omit rather than guess)
+   - userDecisions: calls the HUMAN made, as `{decision, reason, alternativesRejected}`
 
 2. Call `generate_handoff_manifest`:
    - `summary`, `nextSteps` — required
    - `taskDescription`, `currentStatus`, `keyDecisions`, `failedApproaches` — recommended
-   - `blockers` — optional
+   - `blockers`, `userContribution`, `userDecisions` — optional
 
 3. Confirm to user:
    - Latest: `.handoff/handoff.md` (+ `.handoff/handoff.json`)

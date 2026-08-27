@@ -13,6 +13,7 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
 - **failedApproaches**: Format each entry as `"Approach: X → Result: Y → Lesson: Z"`. This prevents the next session from repeating mistakes.
 - **taskDescription**: Include both Goal and Core Intent (why this matters to the project).
 - **implicitRules**: Capture tech stack, naming conventions, env vars — anything not derivable from reading the code.
+- **userContribution / userDecisions**: Attribution, not summary. Record only what the human did or decided, and only where you can point at it in the conversation — an assumed contribution is worse than an absent one, because a downstream reader treats these as evidence. Omit either field entirely when the session has nothing to attribute. Never restate your own work here; `keyDecisions` already covers decisions regardless of who made them.
 
 ## Steps
 
@@ -21,7 +22,7 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
    - Call `generate_handoff_manifest` itself with the drafted fields, ALWAYS including `workingDirectory` set to the absolute project root path determined above. The subagent runs with a different cwd (its own scratchpad), so omitting `workingDirectory` writes the handoff to the wrong location — pass it explicitly every time, never rely on the tool's default.
      - `summary`, `nextSteps` — required
      - `taskDescription`, `currentStatus`, `keyDecisions`, `failedApproaches`, `modifiedFiles`, `implicitRules` — recommended
-     - `blockers` — optional
+     - `blockers`, `userContribution`, `userDecisions` — optional
    - Report back only a short confirmation: the saved paths reported by the tool (latest + archive, each a `.json`/`.md` pair) and any warning lines — not the field content.
 
    Fields to draft:
@@ -33,6 +34,8 @@ Write all field values using telegraphese — drop articles, pronouns, polite wo
    - blockers: unresolved errors
    - modifiedFiles: changed files with delta notes (no code, path + what changed)
    - implicitRules: stack, conventions, env vars
+   - userContribution: what the HUMAN did themselves — specified, corrected, reviewed, rejected, tested, hand-wrote
+   - userDecisions: calls the HUMAN made, as `{decision, reason, alternativesRejected}` — not ones you proposed and they merely let through
 
    If Agent/subagents or the `generate_handoff_manifest` tool are unavailable to the subagent, fall back to drafting and calling the tool directly in the current session.
 

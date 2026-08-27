@@ -21123,6 +21123,12 @@ server.tool(
     taskDescription: external_exports.string().optional().describe("High-level goal + core intent (why this matters). Use telegraphese \u2014 drop articles/pronouns. Write in English."),
     currentStatus: external_exports.string().optional().describe("What is done vs what remains. State why, not just what. Write in English."),
     keyDecisions: external_exports.array(external_exports.string()).optional().describe('Architecture choices and why \u2014 prevents post-compaction amnesia. Format: "Decision: X \u2014 Reason: Y". Write in English.'),
+    userContribution: external_exports.string().optional().describe("What the HUMAN did in this session, in their own right: what they specified, corrected, reviewed, rejected, tested, or built by hand. Attribution field \u2014 never credit your own work here, and omit it entirely rather than guessing. Write in English."),
+    userDecisions: external_exports.array(external_exports.object({
+      decision: external_exports.string().describe("The direction the human chose."),
+      reason: external_exports.string().optional().describe("Why they chose it, in their own reasoning."),
+      alternativesRejected: external_exports.string().optional().describe("The options they turned down.")
+    })).optional().describe("Calls the HUMAN made, not ones you proposed and they merely accepted without comment. Subset of keyDecisions with attribution attached. Omit any entry you cannot point to in the conversation. Write in English."),
     failedApproaches: external_exports.array(external_exports.string()).optional().describe('Already-failed attempts. Format each: "Approach: X \u2192 Result: Y \u2192 Lesson: Z". Prevents repeating mistakes. Write in English.'),
     blockers: external_exports.string().optional().describe("Unresolved errors or blockers. Write in English."),
     modifiedFiles: external_exports.array(external_exports.string()).optional().describe('Changed files with delta notes. Format: "path/to/file: what changed" \u2014 NO code snippets, path+delta only.'),
@@ -21185,6 +21191,8 @@ function buildRecord(input, project, session, now) {
     taskDescription: orNull(input.taskDescription),
     currentStatus: orNull(input.currentStatus),
     keyDecisions: orList(input.keyDecisions),
+    userContribution: orNull(input.userContribution),
+    userDecisions: orDecisionList(input.userDecisions),
     failedApproaches: orList(input.failedApproaches),
     blockers: orNull(input.blockers),
     modifiedFiles: orList(input.modifiedFiles),
@@ -21201,6 +21209,13 @@ function orNull(value) {
 }
 function orList(value) {
   return (value ?? []).filter((item) => typeof item === "string" && item.trim() !== "");
+}
+function orDecisionList(value) {
+  return (value ?? []).filter((item) => item && typeof item.decision === "string" && item.decision.trim() !== "").map((item) => ({
+    decision: item.decision.trim(),
+    reason: orNull(item.reason),
+    alternativesRejected: orNull(item.alternativesRejected)
+  }));
 }
 function serializeRecord(record2) {
   return JSON.stringify(record2, null, 2) + "\n";
@@ -21450,6 +21465,24 @@ ${record2.implicitRules.map((r) => `* ${r}`).join("\n")}
   if (record2.keyDecisions.length > 0) {
     sections.push(`## Key Decisions
 ${record2.keyDecisions.map((d) => `- ${d}`).join("\n")}
+`);
+  }
+  if (record2.userContribution) {
+    sections.push(`## \u{1F64B} User Contribution (human-authored)
+${record2.userContribution}
+`);
+  }
+  if (record2.userDecisions.length > 0) {
+    const lines = record2.userDecisions.map((d) => {
+      const detail = [
+        d.reason ? `  - Reason: ${d.reason}` : "",
+        d.alternativesRejected ? `  - Rejected: ${d.alternativesRejected}` : ""
+      ].filter(Boolean).join("\n");
+      return detail ? `- **${d.decision}**
+${detail}` : `- **${d.decision}**`;
+    });
+    sections.push(`## \u{1F64B} User Decisions (made by the human)
+${lines.join("\n")}
 `);
   }
   if (record2.summary) {

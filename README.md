@@ -45,6 +45,8 @@ Key context (`implicitRules`, `keyDecisions`) is also kept in sync in `CLAUDE.md
 | `modifiedFiles` | `string[]` | ✗ | Changed files with delta notes. Format: `"path/to/file: what changed"` — no code |
 | `implicitRules` | `string[]` | ✗ | Tech stack, naming conventions, env vars — anything not derivable from reading code |
 | `blockers` | `string` | ✗ | Unresolved errors or open questions |
+| `userContribution` | `string` | ✗ | What the **human** did in this session: specified, corrected, reviewed, rejected, tested, hand-wrote. Attribution — omitted rather than guessed |
+| `userDecisions` | `object[]` | ✗ | Calls the **human** made: `{ decision, reason?, alternativesRejected? }`. The attributed subset of `keyDecisions`, not decisions the model proposed and the human merely let through |
 | `workingDirectory` | `string` | ✗ | Absolute path to the project root to write the handoff to — needed on Windows where `process.cwd()` may resolve to System32. Never stored in the JSON: it is an absolute path on the author's machine |
 
 ### Storage layout
@@ -77,6 +79,10 @@ Both files are written to a temp path, verified (the JSON is re-parsed, the Mark
   "taskDescription": "goal and intent or null",
   "currentStatus": "done vs remaining, or null",
   "keyDecisions": [],
+  "userContribution": "what the human did, or null",
+  "userDecisions": [
+    { "decision": "the direction the human chose", "reason": "why, or null", "alternativesRejected": "what they turned down, or null" }
+  ],
   "failedApproaches": [],
   "blockers": null,
   "modifiedFiles": [],
@@ -90,6 +96,7 @@ Both files are written to a temp path, verified (the JSON is re-parsed, the Mark
 - `nextSteps` always holds at least one entry.
 - `schemaVersion` is an integer. It is bumped only when a reader must branch on the shape; new fields are added optionally, so a reader written for an older version keeps working.
 - The JSON holds data only — no section titles, icons, or rendered Markdown strings — and never the absolute `workingDirectory`.
+- `userContribution` and `userDecisions` carry authorship, which `keyDecisions` deliberately does not: a decision recorded there says what was chosen, not who chose it. An external reader (e.g. DevProof) can treat these two as attributed to the human and everything else as unattributed. They are filled only from what the drafter can point at in the conversation, so an empty pair means "nothing to attribute", not "the human did nothing".
 
 **Both formats are produced by local code from the same MCP input, in the same call.** The Markdown is rendered from the record by a pure function; no extra model call, prompt, or token is spent to add the JSON.
 

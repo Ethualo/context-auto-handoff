@@ -45,6 +45,8 @@ Claude의 컨텍스트 창이 가득 차면 대화가 자동으로 압축됩니�
 | `modifiedFiles` | `string[]` | ✗ | 변경 파일과 델타 메모. 형식: `"경로/파일: 무엇을 변경"` — 코드 금지 |
 | `implicitRules` | `string[]` | ✗ | 기술 스택, 네이밍 컨벤션, 환경변수 — 코드에서 유추 불가한 규칙 |
 | `blockers` | `string` | ✗ | 미해결 에러 또는 막혀 있는 문제 |
+| `userContribution` | `string` | ✗ | 이번 세션에서 **사람**이 직접 한 일: 지시·수정·검토·거부·테스트·직접 작성. 귀속 필드이므로 추측하지 않고 비웁니다 |
+| `userDecisions` | `object[]` | ✗ | **사람**이 내린 결정: `{ decision, reason?, alternativesRejected? }`. 모델이 제안하고 사람이 그냥 통과시킨 결정은 제외한, `keyDecisions`의 귀속 가능한 부분집합 |
 | `workingDirectory` | `string` | ✗ | handoff를 쓸 프로젝트 루트 절대 경로 — Windows에서 `process.cwd()`가 System32를 가리킬 때 필요. 작성자 머신의 절대 경로이므로 JSON에는 절대 포함되지 않음 |
 
 ### 저장 구조
@@ -77,6 +79,10 @@ basename이 같은 `.json`과 `.md`는 **handoff 하나**입니다. retention, p
   "taskDescription": "goal and intent or null",
   "currentStatus": "done vs remaining, or null",
   "keyDecisions": [],
+  "userContribution": "사람이 직접 한 일, 또는 null",
+  "userDecisions": [
+    { "decision": "사람이 택한 방향", "reason": "선택 이유 또는 null", "alternativesRejected": "버린 대안 또는 null" }
+  ],
   "failedApproaches": [],
   "blockers": null,
   "modifiedFiles": [],
@@ -90,6 +96,7 @@ basename이 같은 `.json`과 `.md`는 **handoff 하나**입니다. retention, p
 - `nextSteps`는 항상 최소 한 개입니다.
 - `schemaVersion`은 정수입니다. 읽는 쪽이 분기해야 할 때만 올리며, 새 필드는 optional로 추가되므로 이전 버전 기준 리더도 계속 동작합니다.
 - JSON에는 데이터만 들어갑니다 — Markdown 전용 제목·아이콘·렌더링 문자열은 없고, 절대 경로인 `workingDirectory`도 저장하지 않습니다.
+- `userContribution`과 `userDecisions`는 `keyDecisions`가 의도적으로 담지 않는 **귀속(authorship)** 정보를 담습니다. `keyDecisions`는 무엇을 택했는지만 기록할 뿐 누가 택했는지는 기록하지 않습니다. 외부 리더(예: DevProof)는 이 두 필드만 사람 기여로 취급하고 나머지는 귀속 미상으로 처리하면 됩니다. 대화에서 근거를 짚을 수 있는 내용만 채우므로, 두 필드가 비어 있다는 것은 "귀속할 것이 없음"이지 "사람이 한 일이 없음"이 아닙니다.
 
 **두 형식 모두 동일한 MCP 입력으로 로컬 코드가, 한 번의 호출 안에서 생성합니다.** Markdown은 레코드를 받는 순수 함수가 렌더링하며, JSON을 추가하려고 별도 LLM 호출·프롬프트·토큰을 쓰지 않습니다.
 

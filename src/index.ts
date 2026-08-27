@@ -18,6 +18,15 @@ const INDEX_FILE = 'index.md';
 // older version must stay able to read a newer file, so new fields are additive-optional.
 const SCHEMA_VERSION = 1;
 
+// keyDecisions records what was decided; this records who decided it. An external
+// reader (DevProof) cannot attribute a decision to the human from keyDecisions alone,
+// so the human's own calls are kept in a separate, structured field rather than mixed in.
+type UserDecision = {
+  decision: string;
+  reason: string | null;
+  alternativesRejected: string | null;
+};
+
 // The single source of truth for a save. Both output formats are derived from one of
 // these — Markdown is rendered from it, JSON is a straight serialization of it — so the
 // two can never drift, and neither costs an extra model call to produce.
@@ -31,6 +40,8 @@ type HandoffRecord = {
   taskDescription: string | null;
   currentStatus: string | null;
   keyDecisions: string[];
+  userContribution: string | null;
+  userDecisions: UserDecision[];
   failedApproaches: string[];
   blockers: string | null;
   modifiedFiles: string[];
@@ -58,6 +69,12 @@ server.tool(
     taskDescription: z.string().optional().describe('High-level goal + core intent (why this matters). Use telegraphese — drop articles/pronouns. Write in English.'),
     currentStatus: z.string().optional().describe('What is done vs what remains. State why, not just what. Write in English.'),
     keyDecisions: z.array(z.string()).optional().describe('Architecture choices and why — prevents post-compaction amnesia. Format: "Decision: X — Reason: Y". Write in English.'),
+    userContribution: z.string().optional().describe('What the HUMAN did in this session, in their own right: what they specified, corrected, reviewed, rejected, tested, or built by hand. Attribution field — never credit your own work here, and omit it entirely rather than guessing. Write in English.'),
+    userDecisions: z.array(z.object({
+      decision: z.string().describe('The direction the human chose.'),
+      reason: z.string().optional().describe('Why they chose it, in their own reasoning.'),
+      alternativesRejected: z.string().optional().describe('The options they turned down.')
+    })).optional().describe('Calls the HUMAN made, not ones you proposed and they merely accepted without comment. Subset of keyDecisions with attribution attached. Omit any entry you cannot point to in the conversation. Write in English.'),
     failedApproaches: z.array(z.string()).optional().describe('Already-failed attempts. Format each: "Approach: X → Result: Y → Lesson: Z". Prevents repeating mistakes. Write in English.'),
     blockers: z.string().optional().describe('Unresolved errors or blockers. Write in English.'),
     modifiedFiles: z.array(z.string()).optional().describe('Changed files with delta notes. Format: "path/to/file: what changed" — NO code snippets, path+delta only.'),
@@ -131,6 +148,8 @@ type ToolInput = {
   taskDescription?: string;
   currentStatus?: string;
   keyDecisions?: string[];
+  userContribution?: string;
+  userDecisions?: { decision: string; reason?: string; alternativesRejected?: string }[];
   failedApproaches?: string[];
   blockers?: string;
   modifiedFiles?: string[];
@@ -153,6 +172,8 @@ function buildRecord(input: ToolInput, project: string, session: string, now: Da
     taskDescription: orNull(input.taskDescription),
     currentStatus: orNull(input.currentStatus),
     keyDecisions: orList(input.keyDecisions),
+    userContribution: orNull(input.userContribution),
+    userDecisions: orDecisionList(input.userDecisions),
     failedApproaches: orList(input.failedApproaches),
     blockers: orNull(input.blockers),
     modifiedFiles: orList(input.modifiedFiles),
@@ -171,6 +192,18 @@ function orNull(value?: string): string | null {
 
 function orList(value?: string[]): string[] {
   return (value ?? []).filter(item => typeof item === 'string' && item.trim() !== '');
+}
+
+// An entry with no decision is not an attribution, so it is dropped rather than stored
+// as an empty shell that a reader would have to defend against.
+function orDecisionList(value?: ToolInput['userDecisions']): UserDecision[] {
+  return (value ?? [])
+    .filter(item => item && typeof item.decision === 'string' && item.decision.trim() !== '')
+    .map(item => ({
+      decision: item.decision.trim(),
+      reason: orNull(item.reason),
+      alternativesRejected: orNull(item.alternativesRejected)
+    }));
 }
 
 function serializeRecord(record: HandoffRecord): string {
@@ -480,6 +513,21 @@ function renderMarkdown(record: HandoffRecord): string {
 
   if (record.keyDecisions.length > 0) {
     sections.push(`## Key Decisions\n${record.keyDecisions.map(d => `- ${d}`).join('\n')}\n`);
+  }
+
+  if (record.userContribution) {
+    sections.push(`## 🙋 User Contribution (human-authored)\n${record.userContribution}\n`);
+  }
+
+  if (record.userDecisions.length > 0) {
+    const lines = record.userDecisions.map(d => {
+      const detail = [
+        d.reason ? `  - Reason: ${d.reason}` : '',
+        d.alternativesRejected ? `  - Rejected: ${d.alternativesRejected}` : ''
+      ].filter(Boolean).join('\n');
+      return detail ? `- **${d.decision}**\n${detail}` : `- **${d.decision}**`;
+    });
+    sections.push(`## 🙋 User Decisions (made by the human)\n${lines.join('\n')}\n`);
   }
 
   if (record.summary) {

@@ -128,6 +128,11 @@ const FULL_ARGS = {
   taskDescription: 'dual format handoff',
   currentStatus: 'json half added, docs pending',
   keyDecisions: ['Decision: one record — Reason: no drift'],
+  userContribution: 'specified the dual format and rejected a second model call',
+  userDecisions: [
+    { decision: 'ship JSON alongside markdown', reason: 'external tools need structure', alternativesRejected: 'markdown only' },
+    { decision: 'keep schemaVersion at 1' }
+  ],
   failedApproaches: ['Approach: X → Result: Y → Lesson: Z'],
   blockers: 'none open',
   modifiedFiles: ['src/index.ts: record + renderer'],
@@ -175,13 +180,30 @@ async function checkDualFormatSave() {
   assert.ok(md.includes(record.currentStatus), 'currentStatus missing from markdown');
   assert.ok(md.includes(record.blockers), 'blockers missing from markdown');
   assert.ok(md.includes(record.summary), 'summary missing from markdown');
+  assert.ok(md.includes(record.userContribution), 'userContribution missing from markdown');
   for (const list of ['keyDecisions', 'failedApproaches', 'modifiedFiles', 'implicitRules']) {
     for (const item of record[list]) assert.ok(md.includes(item), `${list} entry missing from markdown: ${item}`);
   }
+
+  // Attribution is the point of these fields: a user decision must survive into both
+  // halves with its reason and rejected alternatives, and the sparse entry must not
+  // render dangling "Reason:"/"Rejected:" labels with nothing after them.
+  assert.deepEqual(record.userDecisions, [
+    { decision: 'ship JSON alongside markdown', reason: 'external tools need structure', alternativesRejected: 'markdown only' },
+    { decision: 'keep schemaVersion at 1', reason: null, alternativesRejected: null }
+  ], 'userDecisions not normalized into the record');
+  for (const entry of record.userDecisions) {
+    assert.ok(md.includes(entry.decision), `user decision missing from markdown: ${entry.decision}`);
+    if (entry.reason) assert.ok(md.includes(entry.reason), `user decision reason missing: ${entry.reason}`);
+    if (entry.alternativesRejected) assert.ok(md.includes(entry.alternativesRejected), `rejected alternative missing: ${entry.alternativesRejected}`);
+  }
+  assert.equal((md.match(/- Reason: /g) || []).length, 1, 'markdown rendered a Reason label for a decision without one');
+  assert.equal((md.match(/- Rejected: /g) || []).length, 1, 'markdown rendered a Rejected label for a decision without one');
   for (const step of record.nextSteps) assert.ok(md.includes(step), `next step missing from markdown: ${step}`);
   assert.match(md, /^schema_version: 1$/m, 'markdown frontmatter lost schema_version');
   for (const section of ['High-Level Objective', 'Current State & Next Steps', 'Remaining Queue',
-    'Modified Files Delta', 'Failed Approaches', 'Crucial Context & Implicit Rules', 'Key Decisions', 'Summary']) {
+    'Modified Files Delta', 'Failed Approaches', 'Crucial Context & Implicit Rules', 'Key Decisions',
+    'User Contribution', 'User Decisions', 'Summary']) {
     assert.ok(md.includes(section), `resume-critical section missing: ${section}`);
   }
 
@@ -227,11 +249,11 @@ async function checkOptionalFieldNormalization() {
   assert.equal(response.result.isError, undefined, `minimal save failed: ${JSON.stringify(response)}`);
 
   const record = JSON.parse(fs.readFileSync(path.join(root, '.handoff', 'handoff.json'), 'utf-8'));
-  for (const key of ['summary', 'taskDescription', 'currentStatus', 'blockers']) {
+  for (const key of ['summary', 'taskDescription', 'currentStatus', 'blockers', 'userContribution']) {
     assert.ok(key in record, `optional field dropped instead of nulled: ${key}`);
     assert.equal(record[key], null, `optional field not normalized to null: ${key}`);
   }
-  for (const key of ['keyDecisions', 'failedApproaches', 'modifiedFiles', 'implicitRules', 'keywords']) {
+  for (const key of ['keyDecisions', 'userDecisions', 'failedApproaches', 'modifiedFiles', 'implicitRules', 'keywords']) {
     assert.deepEqual(record[key], [], `optional list not normalized to []: ${key}`);
   }
   assert.equal(record.headline, 'only step', 'headline not derived from the first next step');

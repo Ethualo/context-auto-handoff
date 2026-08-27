@@ -25,6 +25,8 @@ If the `handoff-drafter` subagent is unavailable, fall back to calling `generate
 | `modifiedFiles` | recommended | `"path/to/file: what changed"` — NO code snippets |
 | `implicitRules` | recommended | Tech stack, naming conventions, env vars |
 | `blockers` | optional | Unresolved errors or open questions |
+| `userContribution` | optional | What the HUMAN did themselves — specified, corrected, reviewed, rejected, tested, hand-wrote. Attribution: omit rather than guess |
+| `userDecisions` | optional | Calls the HUMAN made: `[{ decision, reason, alternativesRejected }]`. Not decisions you proposed and they merely let through |
 | `workingDirectory` | recommended | Absolute path to this project's root. Pass it explicitly — do not rely on the tool's cwd fallback. |
 
 Output is saved twice from one record: `.handoff/handoff.json` + `.handoff/handoff.md` (latest), and `.handoff/handoffs/{YYYY-MM-DD}/handoff-{timestamp}.json` + `.md` (archive). The Markdown is the human/resume briefing; the JSON is the structured feed for external tools. Both are rendered locally by the tool from the same fields — never draft the JSON yourself and never call the tool twice. If `implicitRules` or `keyDecisions` are given, the tool also upserts a `## Session Learnings` section into this file (`AGENTS.md`) — and into `CLAUDE.md` too, if that also exists in the project — so the distilled context loads automatically at the start of every session, not just via a handoff read.

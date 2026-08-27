@@ -7,6 +7,7 @@ Then call generate_handoff_manifest yourself with:
   - summary, nextSteps (required)
   - taskDescription, currentStatus, keyDecisions, failedApproaches, modifiedFiles, implicitRules (recommended)
   - blockers (optional)
+  - userContribution, userDecisions (optional, attribution) — what the HUMAN did and decided, the latter as {decision, reason, alternativesRejected}. Fill only from what you can point at in the context you were given; omit rather than guess, since a downstream reader treats these as evidence of authorship.
   - workingDirectory: absolute path to the project root (passed to you by the caller) — always set this explicitly, never rely on the tool's cwd fallback.
 
 Report back only a short confirmation: the saved paths the tool reports (.handoff/handoff.md plus its .json twin, and the archive pair) and any warning lines. Do not return the drafted field content to the caller, and do not draft or write the JSON yourself — the tool renders both formats from the fields you pass in a single call.
