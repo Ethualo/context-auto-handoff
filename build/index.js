@@ -21107,7 +21107,7 @@ import * as path from "path";
 import { randomUUID } from "node:crypto";
 var server = new McpServer({
   name: "context-handoff-manager",
-  version: "1.4.0"
+  version: "1.5.0"
 });
 var ARCHIVE_KEEP = 50;
 var INDEX_FILE = "index.md";
